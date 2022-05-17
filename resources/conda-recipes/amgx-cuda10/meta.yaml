@@ -1,0 +1,40 @@
+{% set name = "amgx" %}
+{% set version = "2.2.0" %}
+{% set cuda = "10.2" %}
+{% set build = "1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  git_url: https://github.com/nvidia/amgx
+  git_rev: v2.2.0
+  git_depth: 1
+
+build:
+  number: {{ build }}
+  string: cuda102_h{{ PKG_HASH }}_{{ build }}
+  missing_dso_whitelist:
+    - '*libcuda.so*'
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - git
+    - make
+    - cmake>=3.23
+  host:
+    - cudatoolkit={{ cuda }}=3
+    - openmpi>=4.0
+  run:
+    - cudatoolkit={{ cuda }}
+    - openmpi>=4.0
+  run_constrained:
+    - __cuda>=10.0
+
+about:
+  home: https://github.com/nvidia/amgx
+  license: BSD-3-Clause
+  license_file: LICENSE

@@ -1,2 +1,10 @@
 # singularity images
 **/*.sif
+
+# log files
+**/.logamgx
+**/*.log
+
+# temporary folders
+**/tmp
+**/tmps

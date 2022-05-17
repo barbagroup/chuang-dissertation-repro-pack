@@ -1,0 +1,10 @@
+channels:
+  - barbagroup
+  - nvidia
+  - conda-forge
+dependencies:
+  - petibm=0.5.4rc1=cuda114*
+  - python=3.9
+  - numpy
+  - matplotlib
+  - h5py

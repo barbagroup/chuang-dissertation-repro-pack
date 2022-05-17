@@ -1,0 +1,46 @@
+# required channels: barbagroup (or local), hcc, conda-forge
+{% set name = "petibm" %}
+{% set version = "0.5.4rc1" %}
+{% set cuda = "10.2" %}
+{% set build = "2" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  git_url: https://github.com/piyueh/petibm
+  git_rev: b687e71f3845699c95089d55b48802278183b1c4
+  git_depth: 1
+
+build:
+  number: {{ build }}
+  string: cuda102_h{{ PKG_HASH }}_{{ build }}
+
+requirements:
+  build:
+    - {{ compiler('cxx') }}
+    - git
+    - make
+    - cmake>=3.23
+    - pkg-config
+  host:
+    - cudatoolkit {{cuda}} 3
+    - amgxwrapper * cuda102*
+    - hdf5 * mpi_openmpi_*
+    - openmpi>=4.0
+    - petsc <3.17
+    - yaml-cpp >=0.7
+  run:
+    - amgxwrapper * cuda102*
+    - hdf5 * mpi_openmpi_*
+    - openmpi>=4.0
+    - petsc <3.17
+    - yaml-cpp >=0.7
+  run_constrained:
+    - __cuda>=10.0
+
+about:
+  home: https://github.com/barbagroup/petibm
+  license: BSD-3-Clause
+  license_file: LICENSE
