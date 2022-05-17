@@ -2,7 +2,7 @@
 {% set name = "petibm" %}
 {% set version = "0.5.4rc1" %}
 {% set cuda = "11.4" %}
-{% set build = "3" %}
+{% set build = "4" %}
 
 package:
   name: {{ name|lower }}
@@ -28,12 +28,15 @@ requirements:
   host:
     - cuda={{ cuda }}
     - amgxwrapper * cuda114*
+    - hdf5 * mpi_openmpi_*
+    - openmpi>=4.0
+    - petsc=3.16.6=real_h11d90dd_100
     - yaml-cpp >=0.7
   run:
     - amgxwrapper * cuda114*
     - hdf5 * mpi_openmpi_*
     - openmpi>=4.0
-    - petsc <3.17
+    - petsc=3.16.6=real_h11d90dd_100
     - yaml-cpp >=0.7
   run_constrained:
     - __cuda>=11.0
