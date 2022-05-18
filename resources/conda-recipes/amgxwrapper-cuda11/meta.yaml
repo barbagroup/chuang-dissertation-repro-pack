@@ -2,7 +2,7 @@
 {% set name = "amgxwrapper" %}
 {% set version = "1.6.1" %}
 {% set cuda = "11.4" %}
-{% set build = "3" %}
+{% set build = "4" %}
 
 package:
   name: {{ name|lower }}
@@ -31,14 +31,14 @@ requirements:
     - cuda {{ cuda }}
     - hdf5 * mpi_openmpi_*
     - openmpi>=4.0
-    - petsc=3.16.6=real_h11d90dd_100
+    - petsc=3.16.6=mpi_openmpi*
 
   run:
     - amgx 2.2.0 cuda114*
     - cudatoolkit={{ cuda }}
     - hdf5 * mpi_openmpi_*
     - openmpi>=4.0
-    - petsc=3.16.6=real_h11d90dd_100
+    - petsc=3.16.6=mpi_openmpi*
 
   run_constrained:
     - __cuda>=11.0

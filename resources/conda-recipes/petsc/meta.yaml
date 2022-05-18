@@ -1,0 +1,45 @@
+# required channels: conda-forge
+{% set version = "3.16.6" %}
+{% set build = 1 %}
+
+package:
+  name: petsc
+  version: {{ version }}
+
+source:
+  url: https://ftp.mcs.anl.gov/pub/petsc/release-snapshots/petsc-lite-{{ version }}.tar.gz
+
+build:
+  number: {{ build }}
+  string: mpi_openmpi_h{{ PKG_HASH }}_{{ build }}
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - cmake
+    - make
+    - pkg-config
+    - gnuconfig   # [unix]
+  host:
+    - python
+    - openmpi
+    - hypre
+    - hdf5 * mpi_openmpi*
+    - superlu_dist * no_omp*
+    - mkl
+  run:
+    - openmpi
+    - hypre
+    - hdf5 * mpi_openmpi*
+    - superlu_dist * no_omp*
+    - mkl
+
+about:
+  home: https://www.mcs.anl.gov/petsc/
+  summary: 'PETSc: Portable, Extensible Toolkit for Scientific Computation'
+  license: BSD-2-Clause
+  license_file: LICENSE
+  license_family: BSD
+  dev_url: https://gitlab.com/petsc/petsc
+  doc_url: https://petsc.org/release/docs/manual/
