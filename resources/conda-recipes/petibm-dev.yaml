@@ -1,0 +1,23 @@
+name: petibm-dev
+
+channels:
+  - barbagroup
+  - nvidia
+  - conda-forge
+
+dependencies:
+  - gxx_linux-64=11.2
+  - cmake
+  - make
+  - pkg-config
+  - cuda
+  - superlu_dist=7.2.0=no_omp*
+  - petsc=3.16.6=mpi_openmpi*
+  - yaml-cpp>=0.7
+  - amgxwrapper=*=cuda114
+  - symengine
+  - python=3.9
+  - numpy
+  - matplotlib
+  - h5py
+  - pyyaml
