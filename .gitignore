@@ -8,3 +8,7 @@
 # temporary folders
 **/tmp
 **/tmps
+
+# results
+**/outputs
+**/logs
