@@ -10,5 +10,7 @@
 **/tmps
 
 # results
+**/output
 **/outputs
+**/figures
 **/logs
