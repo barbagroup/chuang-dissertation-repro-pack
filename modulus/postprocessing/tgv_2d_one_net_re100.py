@@ -16,6 +16,7 @@ import torch
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+import pandas
 from sympy import sympify
 from matplotlib import pyplot
 from modulus.key import Key
@@ -115,6 +116,7 @@ def get_run_time(timestamps):
     The returned run times are in seconds.
     """
 
+    timestamps = numpy.array(timestamps)
     diff = timestamps[1:] - timestamps[:-1]
     truncated = numpy.sort(diff)[5:-5]
 
@@ -268,10 +270,15 @@ def get_norm_history(cfg, workdir):
     torchx, torchy = torch.meshgrid(torchx, torchy, indexing="xy")
 
     # initialize data holders
-    steps = numpy.zeros(len(files), dtype=int)
-    timestamps = numpy.zeros(len(files), dtype=int)  # will be POSIX (epoch) timestamps
-    l1norms = {key: numpy.zeros((len(files), len(cfg.eval_times)), dtype=float) for key in ["u", "v", "p"]}
-    l2norms = {key: numpy.zeros((len(files), len(cfg.eval_times)), dtype=float) for key in ["u", "v", "p"]}
+    data = pandas.DataFrame(
+        data=None,
+        index=pandas.Index([], dtype=int, name="iteration"),
+        columns=pandas.MultiIndex.from_product([
+            ["l1norm", "l2norm"],
+            ["u", "v", "p"],
+            cfg.eval_times
+        ]).append(pandas.Index([("timestamp", "", ""),])),
+    )
 
     # jobs
     jobs = multiprocessing.JoinableQueue()
@@ -295,7 +302,7 @@ def get_norm_history(cfg, workdir):
             inputs.task_done()
 
     procs = []
-    for _ in range(multiprocessing.cpu_count()):
+    for _ in range(multiprocessing.cpu_count()//2):
         proc = multiprocessing.Process(target=worker, args=(jobs, results, cfg, torchx, torchy, cfg.eval_times))
         proc.start()
         procs.append(proc)
@@ -303,20 +310,18 @@ def get_norm_history(cfg, workdir):
     jobs.join()
 
     while not results.empty():
-        i, (step, timestamp, _l1norm, _l2norm) = results.get(False)
-        steps[i] = step
-        timestamps[i] = timestamp
-
+        _, (step, timestamp, _l1norm, _l2norm) = results.get(False)
+        data.loc[step, "timestamp"] = timestamp
         for key in ["u", "v", "p"]:
-            l1norms[key][i] = _l1norm[key]
-            l2norms[key][i] = _l2norm[key]
+            print(len(data.loc[step, ("l1norm", key)]), len(_l1norm[key]))
+            data.loc[step, ("l1norm", key)] = _l1norm[key]
+            data.loc[step, ("l2norm", key)] = _l2norm[key]
 
-    numpy.savez_compressed(
-        workdir.joinpath("norms.npz"), steps=steps, timestamps=timestamps,
-        l1norms=l1norms, l2norms=l2norms, cols=cfg.eval_times
-    )
+    data = data.sort_index()
+    data["runtime"] = get_run_time(data["timestamp"])
+    data.to_csv(workdir.joinpath("norms.csv"))
 
-    return steps, timestamps, l1norms, l2norms, cfg.eval_times
+    return data
 
 
 def plot_norm_history(cfg, workdir):
@@ -338,37 +343,31 @@ def plot_norm_history(cfg, workdir):
 
     workdir.joinpath("figures").mkdir(exist_ok=True)
 
-    if workdir.joinpath("norms.npz").is_file():
-        with numpy.load(workdir.joinpath("norms.npz"), allow_pickle=True) as dsets:
-            steps = dsets["steps"]
-            timestamps = dsets["timestamps"]
-            l1norms = dsets["l1norms"].tolist()
-            l2norms = dsets["l2norms"].tolist()
-            cols = dsets["cols"]
+    if workdir.joinpath("norms.csv").is_file():
+        data = pandas.read_csv(workdir.joinpath("norms.csv"), header=[0, 1, 2], index_col=0)
+        data = data.sort_index()
     else:
-        steps, timestamps, l1norms, l2norms, cols = get_norm_history(cfg, workdir)
-
-    run_times = get_run_time(timestamps)
+        data = get_norm_history(cfg, workdir)
 
     for key in ["u", "v", "p"]:
         plot_one_history(
-            steps, l1norms[key], cols, "Iterations", "L1-norm", f"{key}: L1 error v.s. iterations",
-            "sci", f"l1norm-hist-{key}.png"
+            data.index, data[("l1norm", key)].values, cfg.eval_times, "Iterations", "L1-norm",
+            f"{key}: L1 error v.s. iterations", "sci", f"l1norm-hist-{key}.png"
         )
 
         plot_one_history(
-            steps, l2norms[key], cols, "Iterations", "L2-norm", f"{key}: L2 error v.s. iterations",
-            "sci", f"l2norm-hist-{key}.png",
+            data.index, data[("l2norm", key)].values, cfg.eval_times, "Iterations", "L2-norm",
+            f"{key}: L2 error v.s. iterations", "sci", f"l2norm-hist-{key}.png",
         )
 
         plot_one_history(
-            run_times/3600, l1norms[key], cols, "Run time (hours)", "L1-norm", f"{key}: L1 error v.s. run time",
-            "plain", f"l1norm-hist-run-time-{key}.png",
+            data["runtime"]/3600, data[("l1norm", key)].values, cfg.eval_times, "Run time (hours)",
+            "L1-norm", f"{key}: L1 error v.s. run time", "plain", f"l1norm-hist-run-time-{key}.png",
         )
 
         plot_one_history(
-            run_times/3600, l2norms[key], cols, "Run time (hours)", "L2-norm", f"{key}: L2 error v.s. run time",
-            "plain", f"l2norm-hist-run-time-{key}.png",
+            data["runtime"]/3600, data[("l2norm"), key].values, cfg.eval_times, "Run time (hours)",
+            "L2-norm", f"{key}: L2 error v.s. run time", "plain", f"l2norm-hist-run-time-{key}.png",
         )
 
 
