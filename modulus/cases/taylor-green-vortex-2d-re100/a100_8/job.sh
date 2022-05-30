@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# re1000.sh
+# job.sh
 # Copyright (C) 2022 Pi-Yueh Chuang <pychuang@pm.me>
 #
 # Distributed under terms of the BSD 3-Clause license.
@@ -8,7 +8,7 @@
 
 #SBATCH --job-name="2D TGV"
 #SBATCH --nodes=1
-#SBATCH --gpus=2
+#SBATCH --gpus=8
 #SBATCH --cpus-per-gpu 32
 #SBATCH --partition=dgxa100_80g_2tb
 #SBATCH --time=0-04:00:00
