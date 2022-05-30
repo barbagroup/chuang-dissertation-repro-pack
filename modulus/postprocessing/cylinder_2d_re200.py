@@ -176,11 +176,11 @@ if __name__ == "__main__":
 
     # find the root of the folder `modulus`
     for root in pathlib.Path(__file__).resolve().parents:
-        if root.joinpath("cases").is_dir():
+        if root.joinpath("modulus").is_dir():
             break
     else:
-        raise FileNotFoundError("Couldn't locate the path to the folder `cases`.")
+        raise FileNotFoundError("Couldn't locate the path to the folder `modulus`.")
 
-    root = root.joinpath("cases", "cylinder-2d-re200")
+    root = root.joinpath("modulus", "cylinder-2d-re200")
 
     main(root)

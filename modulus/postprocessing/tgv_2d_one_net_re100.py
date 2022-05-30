@@ -310,11 +310,11 @@ if __name__ == "__main__":
 
     # find the root of the folder `modulus`
     for root in pathlib.Path(__file__).resolve().parents:
-        if root.joinpath("cases").is_dir():
+        if root.joinpath("modulus").is_dir():
             break
     else:
-        raise FileNotFoundError("Couldn't locate the path to the folder `cases`.")
+        raise FileNotFoundError("Couldn't locate the path to the folder `modulus`.")
 
-    root = root.joinpath("cases", "taylor-green-vortex-2d-re100")
+    root = root.joinpath("modulus", "taylor-green-vortex-2d-re100")
 
     main(root)
