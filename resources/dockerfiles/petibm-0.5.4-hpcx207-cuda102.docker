@@ -1,0 +1,280 @@
+# vim:ft=dockerfile
+# Packages:
+#   - CUDA 10.2
+#   - HPCX 2.7.4
+#   - AmgX 6f1401
+#   - PETSc 3.16.6
+#   - AmgXWrapper 1.6.2
+#   - PetIBM 0.5.4rc2
+#   - SymEngine 0.9.0
+
+# Multi-stage build stage 0: build
+# =================================
+FROM nvidia/cuda:10.2-devel-ubuntu18.04 AS builder
+
+# basic
+# -----------------------------------------------------------------------------
+
+# configure the environment
+RUN export DEBIAN_FRONTEND=noninteractive \
+ && ln -sf /bin/bash /bin/sh \
+ && apt-get -y update \
+ && apt-get -y install tzdata locales \
+ && ln -sf /usr/share/zoneinfo/US/Eastern /etc/localtime \
+ && dpkg-reconfigure --frontend noninteractive tzdata \
+ && sed -i "s/\#\ en_US\.UTF-8\ UTF-8/en_US\.UTF-8\ UTF-8/g" /etc/locale.gen \
+ && dpkg-reconfigure locales \
+ && echo 'LANG="en_US.UTF-8"' >> /etc/default/locale \
+ && echo 'LANG="en_US.UTF-8"' >> /etc/locale.conf
+
+# essential dependencies
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        curl build-essential libtool autoconf automake pkg-config \
+        numactl libnuma-dev \
+        python3 python3-pip wget rsync zlib1g-dev libgmp-dev
+
+# cmake
+# -----------------------------------------------------------------------------
+RUN curl -L https://github.com/Kitware/CMake/releases/download/v3.23.1/cmake-3.23.1-linux-x86_64.sh -o /cmake-installer.sh \
+ && sh /cmake-installer.sh --prefix=/usr --exclude-subdir --skip-license
+
+# HPC-X
+# -----------------------------------------------------------------------------
+RUN curl -L https://content.mellanox.com/hpc/hpc-x/v2.7.4/hpcx-v2.7.4-gcc-inbox-ubuntu18.04-x86_64.tbz -o /hpcx.tbz \
+ && mkdir /hpcx \
+ && tar -xf /hpcx.tbz -C /hpcx --strip-component=1
+
+# SymEngine
+# -----------------------------------------------------------------------------
+ENV SYMENGINE_VERSION="0.9.0"
+ENV SYMENGINE_DIR="/usr/local/symengine-${SYMENGINE_VERSION}"
+
+RUN curl -L https://github.com/symengine/symengine/tarball/v${SYMENGINE_VERSION} -o /symengine.tar.gz
+
+RUN mkdir symengine \
+ && tar -xf /symengine.tar.gz -C /symengine --strip-component=1 \
+ && mkdir symengine/build \
+ && cd symengine/build \
+ && cmake \
+        -DCMAKE_INSTALL_PREFIX=${SYMENGINE_DIR} \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_BENCHMARKS=OFF \
+        -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON \
+        ../ \
+ && make all -j $(nproc) \
+ && make install \
+ && echo "${SYMENGINE_DIR}/lib" > /etc/ld.so.conf.d/symengine-${PETSC_VERSION}.conf && ldconfig
+
+# PETSc
+# -----------------------------------------------------------------------------
+ENV PETSC_VERSION="3.16.6"
+ENV PETSC_DIR="/usr/local/petsc-${PETSC_VERSION}" \
+    PETSC_ARCH=""
+
+RUN curl -L http://ftp.mcs.anl.gov/pub/petsc/release-snapshots/petsc-lite-${PETSC_VERSION}.tar.gz -o /petsc.tar.gz
+
+RUN source /hpcx/hpcx-init.sh && hpcx_load \
+ && export PETSC_INSTALL_PATH=${PETSC_DIR} && unset PETSC_ARCH && unset PETSC_DIR \
+ && mkdir petsc && tar -xf petsc.tar.gz -C petsc --strip-component=1 && cd petsc \
+ && ./configure \
+    --prefix="${PETSC_INSTALL_PATH}" \
+    --with-default-arch=0 \
+    --with-fortran-bindings=0 \
+    --with-precision=double \
+    --with-clanguage=C \
+    --with-shared-libraries=1 \
+    --with-cc=mpicc \
+    --with-cxx=mpicxx \
+    --with-fc=0 \
+    --with-pic=1 \
+    --with-cxx-dialect=C++11 \
+    --with-debugging=0 \
+    --COPTFLAGS="-O3" \
+    --CXXOPTFLAGS="-O3" \
+    --with-gcov=0 \
+    --with-mpi=1 \
+    --download-f2cblaslapack=1 \
+    --download-hypre=1 \
+    --download-superlu_dist=1 \
+    --download-hdf5=1 \
+ && make PETSC_DIR=${PWD} PETSC_ARCH=arch-linux-c-opt all \
+ && make PETSC_DIR=${PWD} PETSC_ARCH=arch-linux-c-opt install \
+ && cd .. && rm -rf petsc petsc.tar.gz \
+ && export PETSC_DIR=${PETSC_INSTALL_PATH} \
+ && echo "${PETSC_DIR}/lib" > /etc/ld.so.conf.d/petsc-${PETSC_VERSION}.conf && ldconfig
+
+# AmgX
+# -----------------------------------------------------------------------------
+ENV AMGX_VERSION="6f14016e420617b4d57580f77b5a2ab4c28a162d"
+ENV AMGX_DIR="/usr/local/amgx-${AMGX_VERSION}"
+
+RUN curl -L https://github.com/NVIDIA/AMGX/tarball/${AMGX_VERSION} -o /amgx.tar.gz
+
+# build and install amgx
+RUN source /hpcx/hpcx-init.sh && hpcx_load \
+ && mkdir amgx && tar -xf /amgx.tar.gz -C amgx --strip-component=1 \
+ && mkdir amgx/build && cd amgx/build \
+ && cmake \
+    -DCMAKE_C_COMPILER=gcc \
+    -DCMAKE_CXX_COMPILER=g++ \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=${AMGX_DIR} \
+    -DCMAKE_VERBOSE_MAKEFILE=OFF  \
+    -DCUDA_ARCH="35;70" \
+    -DCMAKE_NO_MPI=OFF \
+    -DAMGX_NO_RPATH=OFF  \
+    -DCUDA_NVCC_FLAGS_RELEASE="" \
+    .. \
+ && make -j $(nproc) all && make install \
+ && cd ../.. && rm -rf amgx amgx.tar.gz \
+ && echo "${AMGX_DIR}/lib" > /etc/ld.so.conf.d/amgx-${AMGX_VERSION}.conf && ldconfig
+
+# AmgXWrapper
+# -----------------------------------------------------------------------------
+ENV AMGXWRAPPER_VERSION="1.6.2"
+ENV AMGXWRAPPER_DIR="/usr/local/amgxwrapper-${AMGXWRAPPER_VERSION}"
+
+RUN curl -L https://github.com/barbagroup/AmgXWrapper/tarball/v${AMGXWRAPPER_VERSION} -o /amgxwrapper.tar.gz
+
+# build and install AmgXWrapper
+RUN source /hpcx/hpcx-init.sh && hpcx_load \
+ && export OMPI_MCA_plm_rsh_agent=sh \
+ && mkdir amgxwrapper \
+ && tar -xf amgxwrapper.tar.gz -C amgxwrapper --strip-component=1 \
+ && mkdir amgxwrapper/build && cd amgxwrapper/build \
+ && cmake \
+        -DCMAKE_INSTALL_PREFIX=${AMGXWRAPPER_DIR} \
+        -DCMAKE_C_COMPILER=gcc \
+        -DCMAKE_CXX_COMPILER=g++ \
+        -DCMAKE_CUDA_FLAGS_RELEASE="" \
+        -DCMAKE_CUDA_ARCHITECTURES="all" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DPETSC_DIR=${PETSC_DIR} \
+        -DPETSC_ARCH="" \
+        -DCUDA_DIR=/usr/local/cuda \
+        -DAMGX_DIR=${AMGX_DIR} \
+        -DCMAKE_VERBOSE_MAKEFILE=1 \
+        .. \
+ && make all -j $(nproc) \
+ && make install \
+ && echo "${AMGXWRAPPER_DIR}/lib" > /etc/ld.so.conf.d/amgxwrapper-${AMGXWRAPPER_VERSION}.conf && ldconfig
+
+# PetIBM
+# -----------------------------------------------------------------------------
+ENV PETIBM_VERSION="0.5.4"
+ENV PETIBM_DIR="/usr/local/petibm-${PETIBM_VERSION}"
+
+RUN curl -L https://github.com/barbagroup/PetIBM/tarball/v${PETIBM_VERSION} -o /petibm.tar.gz
+
+# build and install PetIBM
+RUN source /hpcx/hpcx-init.sh && hpcx_load \
+ && export OMPI_MCA_plm_rsh_agent=sh \
+ && apt install -y git \
+ && mkdir petibm && tar xf petibm.tar.gz -C petibm --strip-component=1 \
+ && cd petibm \
+ && mkdir build && cd build \
+ && cmake \
+    -DCMAKE_INSTALL_PREFIX=${PETIBM_DIR} \
+    -DCMAKE_CXX_COMPILER=g++ \
+    -DCMAKE_CUDA_ARCHITECTURES="all" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DPETSC_DIR=${PETSC_DIR} \
+    -DPETSC_ARCH="" \
+    -DAMGXWRAPPER_DIR=${AMGXWRAPPER_DIR} \
+    -DPETIBM_ENABLE_TESTS=ON \
+    -DPETIBM_USE_AMGX=ON \
+    -DPETIBM_BUILD_YAMLCPP=ON \
+    ../ \
+ && make all -j $(nproc) \
+ && make check \
+ && make install \
+ && echo "${PETIBM_DIR}/lib" > /etc/ld.so.conf.d/petibm-${PETIBM_VERSION}.conf && ldconfig
+
+# create a scrip to initialize HPCX all the time
+RUN echo "#!/bin/bash" > /entrypoint.sh \
+ && echo "set -e" >> /entrypoint.sh \
+ && echo ". /hpcx/hpcx-init.sh" >> /entrypoint.sh \
+ && echo "hpcx_load" >> /entrypoint.sh \
+ && echo "exec \"\$@\"" >> /entrypoint.sh \
+ && chmod a+x /entrypoint.sh
+
+
+# Multi-stage build stage 1: runtime image
+# =========================================
+FROM nvidia/cuda:10.2-runtime-ubuntu18.04 AS production
+LABEL maintainer="Pi-Yueh Chuang <pychuang@gwu.edu>"
+
+ENV SYMENGINE_VERSION="0.9.0" \
+    PETSC_VERSION="3.16.6" \
+    AMGX_VERSION="6f14016e420617b4d57580f77b5a2ab4c28a162d" \
+    AMGXWRAPPER_VERSION="1.6.2" \
+    PETIBM_VERSION="0.5.4"
+
+ENV SYMENGINE_DIR="/usr/local/symengine-${SYMENGINE_VERSION}" \
+    PETSC_DIR="/usr/local/petsc-${PETSC_VERSION}" \
+    PETSC_ARCH="" \
+    AMGX_DIR="/usr/local/amgx-${AMGX_VERSION}" \
+    AMGXWRAPPER_DIR="/usr/local/amgxwrapper-${AMGXWRAPPER_VERSION}" \
+    PETIBM_DIR="/usr/local/petibm-${PETIBM_VERSION}"
+
+# configure the environment
+RUN export DEBIAN_FRONTEND=noninteractive \
+ && ln -sf /bin/bash /bin/sh \
+ && apt-get -y update \
+ && apt-get -y install tzdata locales \
+ && ln -sf /usr/share/zoneinfo/US/Eastern /etc/localtime \
+ && dpkg-reconfigure --frontend noninteractive tzdata \
+ && sed -i "s/\#\ en_US\.UTF-8\ UTF-8/en_US\.UTF-8\ UTF-8/g" /etc/locale.gen \
+ && dpkg-reconfigure locales \
+ && echo 'LANG="en_US.UTF-8"' >> /etc/default/locale \
+ && echo 'LANG="en_US.UTF-8"' >> /etc/locale.conf \
+ && apt-get install -y --no-install-recommends \
+        python3 python3-pip numactl libnuma-dev zlib1g-dev \
+        openssh-client openssh-server libgmp-dev \
+ && apt-get -y autoclean \
+ && rm -rf /var/lib/apt/lists/*
+
+# copy installed programs
+COPY --from=builder /hpcx /hpcx
+COPY --from=builder ${SYMENGINE_DIR} ${SYMENGINE_DIR}
+COPY --from=builder ${PETSC_DIR} ${PETSC_DIR}
+COPY --from=builder ${AMGX_DIR} ${AMGX_DIR}
+COPY --from=builder ${AMGXWRAPPER_DIR} ${AMGXWRAPPER_DIR}
+COPY --from=builder ${PETIBM_DIR} ${PETIBM_DIR}
+COPY --from=builder /entrypoint.sh /entrypoint.sh
+
+# ldconfig
+RUN source /hpcx/hpcx-init.sh && hpcx_load \
+ && echo "${SYMENGINE_DIR}/lib" > /etc/ld.so.conf.d/petibm-${PETIBM_VERSION}.conf \
+ && echo "${PETSC_DIR}/lib" > /etc/ld.so.conf.d/petsc-${PETSC_VERSION}.conf \
+ && echo "${AMGX_DIR}/lib" > /etc/ld.so.conf.d/amgx-${AMGX_VERSION}.conf \
+ && echo "${AMGXWRAPPER_DIR}/lib" > /etc/ld.so.conf.d/amgxwrapper-${AMGXWRAPPER_VERSION}.conf \
+ && echo "${PETIBM_DIR}/lib" > /etc/ld.so.conf.d/petibm-${PETIBM_VERSION}.conf \
+ && ldconfig
+
+# set up ssh for root for MPI applications
+RUN mkdir /var/run/sshd \
+ && ssh-keygen -A \
+ && sed -i "s/#PermitRootLogin\ yes/PermitRootLogin\ yes/" /etc/ssh/sshd_config \
+ && sed -i "s/session\s*required\s*pam_loginuid.so/session\ optional\ pam_loginuid.so/g" /etc/pam.d/sshd \
+ && ssh-keygen -f /root/.ssh/id_rsa -t rsa -N '' \
+ && echo "Host 10.*" > /root/.ssh/config \
+ && echo "  Port 23" >> /root/.ssh/config \
+ && echo "  StrictHostKeyChecking no" >> /root/.ssh/config \
+ && echo "  UserKnownHostsFile /dev/null" >> /root/.ssh/config \
+ && chmod 600 /root/.ssh/config && chmod 700 /root/.ssh \
+ && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+
+# add paths
+ENV PATH="${AMGX_DIR}/bin:${PATH}"
+ENV PATH="${PETSC_DIR}/bin:${PATH}"
+ENV PATH="${AMGXWRAPPER_DIR}/bin:${PATH}"
+ENV PATH="${PETIBM_DIR}/bin:${PATH}"
+
+# using port 23 for Azure cloud, see
+# https://batch-shipyard.readthedocs.io/en/3.0.1/80-batch-shipyard-multi-instance-tasks
+EXPOSE 23
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/usr/sbin/sshd", "-D", "-p", "23"]
