@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # vim:fenc=utf-8
 #
-# Copyright © 2022 Pi-Yueh Chuang <pychuang@pm.me>
+# Copyright © 2022 Pi-Yueh Chuang <pychuang@gwu.edu>
 #
 # Distributed under terms of the BSD 3-Clause license.
 
@@ -138,4 +138,37 @@ class QCriterion(_PDES):
                 - uvw[0].diff(xyz[2]) * uvw[2].diff(xyz[0])
                 - uvw[1].diff(xyz[2]) * uvw[2].diff(xyz[1])
             )
+        }
+
+
+class VelocityGradients(_PDES):
+    """Gradients of velocity.
+    """
+
+    def __init__(self, dim=2):  # pylint: disable=super-init-not-called
+        assert dim in [1, 2, 3], f"Illegal dimension: {dim}"
+
+        # all possible independent variables
+        xyz = list(_symbols("x, y, z"))
+
+        # actual independent variables depend on problem's dimension
+        invars = xyz[:dim]
+
+        # dependent variables (using constant 0 makes derivatives trivial when not needed)
+        uvw = [
+            _Function("u")(*invars),  # pylint: disable=not-callable
+            _Function("v")(*invars) if dim > 1 else _Number(0),  # pylint: disable=not-callable
+            _Function("w")(*invars) if dim > 2 else _Number(0),  # pylint: disable=not-callable
+        ]
+
+        self.equations = {
+            "u_x": uvw[0].diff(xyz[0]),
+            "u_y": uvw[0].diff(xyz[1]),
+            "u_z": uvw[0].diff(xyz[2]),
+            "v_x": uvw[1].diff(xyz[0]),
+            "v_y": uvw[1].diff(xyz[1]),
+            "v_z": uvw[1].diff(xyz[2]),
+            "w_x": uvw[2].diff(xyz[0]),
+            "w_y": uvw[2].diff(xyz[1]),
+            "w_z": uvw[2].diff(xyz[2]),
         }
