@@ -141,7 +141,7 @@ def main(workdir):
     workdir.joinpath("output").mkdir(exist_ok=True)
 
     # cases' names
-    cases = [f"nn_{n}" for n in [256, 512]]
+    cases = [f"nn{n}" for n in [256, 512]]
 
     # target fields
     fields = ["u", "v", "p", "vorticity_z"]
