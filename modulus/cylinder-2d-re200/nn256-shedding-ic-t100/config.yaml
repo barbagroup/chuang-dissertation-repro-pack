@@ -14,12 +14,12 @@ debug: false
 
 arch:
   fully_connected:
-    layer_size: 512
+    layer_size: 256
     nr_layers: 6
 
 scheduler:
   decay_rate: 0.95
-  decay_steps: 10000
+  decay_steps: 1000
 
 training:
   max_steps : 1000000
@@ -29,7 +29,7 @@ training:
   print_stats_freq: 100
 
 batch_size:
-  ic: 2048
+  ic: 8192
   npts: 40960
   inlet: 8192
   outlet: 8192
@@ -41,7 +41,7 @@ custom:
   scale: 1
   nu: 0.005
   rho: 1.0
-  tstart: 0.0
+  tstart: 100.0
   tend: 200.0
   xbg: -8.0
   xed: 25.0

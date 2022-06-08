@@ -41,6 +41,7 @@ custom:
   scale: 1
   nu: 0.005
   rho: 1.0
+  tstart: 0.0
   tend: 200.0
   xbg: -8.0
   xed: 25.0

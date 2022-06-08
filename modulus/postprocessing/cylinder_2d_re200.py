@@ -99,8 +99,8 @@ def get_drag_lift_coefficients(cfg, workdir):
     npy = numpy.sin(theta) * float(cfg.custom.radius)
 
     # time
-    nt = 201
-    times = numpy.linspace(0., 200., nt)
+    nt = int(cfg.custom.tend - cfg.custom.tstart) + 1
+    times = numpy.linspace(cfg.custom.tstart, cfg.custom.tend, nt)
 
     # reshape to N by 1 vectors and create torch vectors (sharing the same memory space)
     torchx = torch.tensor(npx.reshape(-1, 1), dtype=dtype, device=cfg.device, requires_grad=True)
@@ -130,10 +130,10 @@ def get_drag_lift_coefficients(cfg, workdir):
 
         cl[i] = - 2 * 2 * numpy.pi * cfg.custom.radius * numpy.sum(fl - pl) / nr
 
-    return cd, cl
+    return times, cd, cl
 
 
-def main(workdir):
+def main(workdir, force=False):
     """Main function.
     """
 
@@ -142,15 +142,24 @@ def main(workdir):
 
     # cases' names
     cases = [f"nn{n}" for n in [256, 512]]
+    cases.extend([f"nn256-shedding-ic-t{n}" for n in [100, 130]])
 
     # target fields
     fields = ["u", "v", "p", "vorticity_z"]
 
     # hdf5 file
-    with h5open(workdir.joinpath("output", "snapshots.h5"), "w") as h5file:
+    with h5open(workdir.joinpath("output", "snapshots.h5"), "a") as h5file:
 
         # read and process data case-by-case
         for job in cases:
+
+            if job in h5file:
+                if not force:
+                    print(f"Skipping {job}")
+                    continue
+                else:
+                    del h5file[f"{job}"]
+
             print(f"Handling {job}")
 
             jobdir = workdir.joinpath(job, "outputs")
@@ -167,20 +176,30 @@ def main(workdir):
             for time, field in itertools.product(cfg.eval_times, fields):
                 h5file.create_dataset(f"{job}/{time}/{field}", data=snapshots[time][field], compression="gzip")
 
-            cd, cl = get_drag_lift_coefficients(cfg, jobdir)
+            times, cd, cl = get_drag_lift_coefficients(cfg, jobdir)
+            h5file.create_dataset(f"{job}/times", data=times, compression="gzip")
             h5file.create_dataset(f"{job}/cd", data=cd, compression="gzip")
             h5file.create_dataset(f"{job}/cl", data=cl, compression="gzip")
 
+    return 0
+
 
 if __name__ == "__main__":
+    import argparse
 
     # find the root of the folder `modulus`
     for root in pathlib.Path(__file__).resolve().parents:
-        if root.joinpath("modulus").is_dir():
+        if root.joinpath("cylinder-2d-re200").is_dir():
             break
     else:
-        raise FileNotFoundError("Couldn't locate the path to the folder `modulus`.")
+        raise FileNotFoundError("Couldn't locate the path to the folder `cylinder-2d-re200`.")
 
-    root = root.joinpath("modulus", "cylinder-2d-re200")
+    root = root.joinpath("cylinder-2d-re200")
 
-    main(root)
+    # cmd arguments
+    parser = argparse.ArgumentParser(description="Post-processing Modulus Cylinder 2D Re200")
+    parser.add_argument("--force", action="store_true", default=False, help="Force re-write.")
+    args = parser.parse_args()
+
+    # calling the main function
+    sys.exit(main(root, args.force))
