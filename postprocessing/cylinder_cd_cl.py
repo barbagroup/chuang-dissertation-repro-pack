@@ -33,8 +33,8 @@ rootdir.joinpath("figures").mkdir(exist_ok=True)
 pinn = numpy.zeros((201, 3), dtype=float)
 pinn[:, 0] = numpy.linspace(0., 200, 201)
 with h5py.File(modulusdir.joinpath("snapshots.h5"), "r") as dset:
-    pinn[:, 1] = dset["nn_256/cd"][...]
-    pinn[:, 2] = dset["nn_256/cl"][...]
+    pinn[:, 1] = dset["nn256/cd"][...]
+    pinn[:, 2] = dset["nn256/cl"][...]
 
 petibm = numpy.loadtxt(petibmdir.joinpath("forces-0.txt"), dtype=float)
 

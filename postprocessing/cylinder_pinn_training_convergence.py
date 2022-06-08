@@ -30,8 +30,8 @@ modulusdir = rootdir.joinpath("modulus", "cylinder-2d-re200")
 rootdir.joinpath("figures").mkdir(exist_ok=True)
 
 # read data
-data1 = read_tensorboard_data(modulusdir.joinpath("nn_256", "outputs"))
-data2 = read_tensorboard_data(modulusdir.joinpath("nn_512", "outputs"))
+data1 = read_tensorboard_data(modulusdir.joinpath("nn256", "outputs"))
+data2 = read_tensorboard_data(modulusdir.joinpath("nn512", "outputs"))
 
 # plot
 fig, ax = pyplot.subplots(1, 1, figsize=(6, 3), dpi=166)

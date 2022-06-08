@@ -31,10 +31,10 @@ rootdir.joinpath("figures").mkdir(exist_ok=True)
 
 # read data
 with h5py.File(modulusdir.joinpath("output", "snapshots.h5"), "r") as dset:
-    x = dset["nn_256/x"][...]
-    y = dset["nn_256/y"][...]
-    u = dset["nn_256/200.0/u"][...]
-    wz = dset["nn_256/200.0/vorticity_z"][...]
+    x = dset["nn256/x"][...]
+    y = dset["nn256/y"][...]
+    u = dset["nn256/200.0/u"][...]
+    wz = dset["nn256/200.0/vorticity_z"][...]
 
 # normalization for colormaps
 norms = {
