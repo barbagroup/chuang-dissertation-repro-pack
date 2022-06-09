@@ -261,7 +261,7 @@ def main(workdir):
     workdir.joinpath("output").mkdir(exist_ok=True)
 
     # cases' names
-    cases = [f"a100_{n}" for n in [1, 2, 4, 8]]
+    cases = [f"a100-{n}" for n in [1, 2, 4, 8]]
 
     # target fields
     fields = ["u", "v", "p"]
@@ -315,6 +315,6 @@ if __name__ == "__main__":
     else:
         raise FileNotFoundError("Couldn't locate the path to the folder `modulus`.")
 
-    root = root.joinpath("modulus", "taylor-green-vortex-2d-re100")
+    root = root.joinpath("modulus", "taylor-green-vortex-2d-re100", "nl6-nn256")
 
     main(root)
