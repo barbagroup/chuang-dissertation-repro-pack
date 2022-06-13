@@ -28,7 +28,8 @@ class NSAnnealingLossAggregator(_Aggregator):
         self.alpha: float = alpha
         self.eps: float = eps
         self.register_buffer("lambda_ema", torch.ones(self.num_losses, device=self.device))
-        self.step = -1
+        self.step: int = -1
+        self.dtype = self.params[0].dtype
 
     def forward(self, losses: _Dict[str, torch.Tensor], step: int) -> torch.Tensor:
         """Weights and aggregates the losses using the learning rate annealing algorithm
@@ -58,25 +59,33 @@ class NSAnnealingLossAggregator(_Aggregator):
             # record the current step
             self.step = step
 
+            # empty numerator holder
+            numerator: torch.Tensor = torch.tensor(0.0, dtype=self.dtype, device=self.device)
+
             # pde residual loss
             for key in ["continuity", "momentum_x", "momentum_y", "momentum_z"]:
-                loss += losses.get(key, torch.zeros_like(self.init_loss))
 
-            # the summed pde loss' gradients w.r.t. model parameters; each element denotes gradients of a neuron layer
-            grads: _List[torch.Tensor] = _gradient(loss, self.params)
+                # only losses other than PDE residuals are weighted
+                if key in losses.keys():  # annoying.. but torch.script hates `if not ...: continue` statement
 
-            # initialize a list to hold flattened gradients from all layers
-            flattened: _List[torch.Tensor] = []
+                    # gradients w.r.t. model parameters; each element denotes gradients of a neuron layer
+                    grads: _List[torch.Tensor] = _gradient(losses[key], self.params)
 
-            with torch.no_grad():
-                # flatten and concatnate all parameters' gradients
-                for layer_grad in grads:
-                    if layer_grad is not None:
-                        # grads are detached from the graph because they will not be involbed in later gradients
-                        flattened.append(torch.abs(torch.flatten(layer_grad.detach().data)))
+                    # initialize a list to hold flattened gradients from all layers
+                    flattened: _List[torch.Tensor] = []
 
-                # the numerator needed later
-                numerator: torch.Tensor = torch.mean(torch.cat(flattened))
+                    with torch.no_grad():
+                        # flatten and concatnate all parameters' gradients
+                        for layer_grad in grads:
+                            if layer_grad is not None:
+                                # grads are detached from the graph because they will not be involbed in later gradients
+                                flattened.append(torch.abs(torch.flatten(layer_grad.detach().data)))
+
+                        # update the numerator
+                        numerator += torch.mean(torch.cat(flattened))
+
+                    # update total loss
+                    loss += losses[key]
 
             # compute the mean of each loss gradients
             for i, key in enumerate(losses.keys()):
@@ -86,10 +95,10 @@ class NSAnnealingLossAggregator(_Aggregator):
                     continue
 
                 # current loss term's derivatives w.r.t. model parameters as a list; each list element denotes a layer
-                grads = _gradient(losses[key], self.params)
+                grads: _List[torch.Tensor] = _gradient(losses[key], self.params)
 
                 # initialize a list to hold flattened gradients from all layers
-                flattened = []
+                flattened: _List[torch.Tensor] = []
 
                 with torch.no_grad():
                     # parameters in each layer may be a matrix; flatten them and combine them into one long 1D vector
