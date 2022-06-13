@@ -125,7 +125,7 @@ class SolverBase:
 
         # distributed barrier before starting the train loop
         if self.manager.distributed:
-            _torch.distributed.barrier(device_ids=[self.manager.local_rank])
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
     def get_flattened_params(self):
         """Return the flattenend and concatenated parameters.
@@ -227,7 +227,7 @@ class SolverBase:
 
         # wait if necessarry
         if self.manager.distributed:
-            _torch.distributed.barrier(device_ids=[self.manager.local_rank])
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
     def solve(self):
         """Training loop wrapper.
@@ -274,7 +274,7 @@ class SolverBase:
 
         # wait for rank 0 to finish the job
         if self.manager.distributed:
-            _torch.distributed.barrier(device_ids=[self.manager.local_rank])
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
     def _print_stdout_info(self, loss: float, timer):
         """Print some info to stdout.
@@ -452,7 +452,7 @@ class LBFGSSolver(SolverBase):
 
         # wait if necessarry
         if self.manager.distributed:
-            _torch.distributed.barrier(device_ids=[self.manager.local_rank])
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
 
 @dataclass
