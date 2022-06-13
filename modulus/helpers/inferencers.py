@@ -16,6 +16,7 @@ from datetime import datetime as _datetime
 from datetime import timezone as _timezone
 
 import torch as _torch
+from termcolor import colored as _colored
 from modulus.continuous.inferencer.inferencer import Inferencer as _Inferencer
 from modulus.distributed.manager import DistributedManager as _DistributedManager
 
@@ -39,7 +40,6 @@ class SaveModelInferencer(_Inferencer):
         else:
             raise ValueError(f"Couldn't find network {name} in the nodes")
 
-
     def save_results(self, name, prefix, writer, save_filetypes, step):
         """Save the model parameters to a file.
         """
@@ -58,4 +58,4 @@ class SaveModelInferencer(_Inferencer):
             with _lzma.open(filename, "wb") as fobj:
                 _torch.save({"step": step, "time": time, "model": mem.read()}, fobj)
 
-        self.log.info("Done saving model for step %d to %s", step, str(filename))
+        self.log.info(_colored(f"[step: {step:10d}] saved model to {filename}", "green"))
