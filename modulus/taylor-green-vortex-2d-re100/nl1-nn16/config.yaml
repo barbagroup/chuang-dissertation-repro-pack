@@ -1,0 +1,44 @@
+defaults :
+  - modulus_default
+  - arch: [fully_connected,]
+  - optimizer: lbfgs
+  - loss: NSAnnealingLossAggregator
+  - _self_
+
+jit: true
+
+save_filetypes: npz
+
+debug: false
+
+arch:
+  fully_connected:
+    layer_size: 16
+    nr_layers: 1
+
+optimizer:
+  max_iter: 1000
+
+loss:
+  alpha: 0.1
+
+training:
+  max_steps : 2000
+  rec_results_freq : 10
+  rec_inference_freq: 10
+  rec_monitor_freq: 10
+  save_network_freq: 10
+  print_stats_freq: 1
+  summary_freq: 10
+
+batch_size:
+  nbatches: 1000
+  npts: 256
+
+custom:
+  x: [-pi, pi]
+  y: [-pi, pi]
+  t: [0., 100.]
+  periodic: ["x", "y"]
+  nu: 0.01
+  rho: 1.0
