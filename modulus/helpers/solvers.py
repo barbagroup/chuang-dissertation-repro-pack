@@ -12,6 +12,10 @@ import logging as _logging
 import pathlib as _pathlib
 import time as _time
 import torch as _torch
+from lzma import open as _lzmaopen
+from io import BytesIO as _BytesIO
+from datetime import datetime as _datetime
+from datetime import timezone as _timezone
 from dataclasses import dataclass
 from typing import Optional as _Optional
 from termcolor import colored as _colored
@@ -402,10 +406,6 @@ class LBFGSSolver(SolverBase):
         # training complete
         else:
             if self.manager.rank == 0:
-                # copy averaged parameters back to the underlying running model
-                with _torch.no_grad():
-                    for swap, p in zip(self.swa_model.parameters(), self.global_optimizer_model.parameters()):
-                        p.copy_(swap)
                 self.log.info(f"[step: {self.step:10d}] finished training!")
 
     def load_network(self):
@@ -416,10 +416,7 @@ class LBFGSSolver(SolverBase):
         filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
         if filename.is_file():
             try:
-                if hasattr(self.swa_model, "module"):
-                    self.swa_model.module.load_state_dict(_torch.load(filename, map_location=self.device))
-                else:
-                    self.swa_model.load_state_dict(_torch.load(filename, map_location=self.device))
+                self.swa_model.load_state_dict(_torch.load(filename, map_location=self.device))
                 self.log.info(f"{_colored('Success loading swa-model:', 'green')} {filename}")
             except Exception:
                 self.log.info(f"{_colored('Fail loading swa-model:', 'red')} {filename}")
@@ -441,16 +438,54 @@ class LBFGSSolver(SolverBase):
         SolverBase.save_checkpoint(self)
 
         # save swa model
-        if self.manager.rank == 0:
+        if self.step >= self.swa_start and self.manager.rank == 0:
             filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
-            if hasattr(self.swa_model, "module"):
-                _torch.save(self.swa_model.module.state_dict(), filename)
-            else:
-                _torch.save(self.swa_model.state_dict(), filename)
-            msg = _colored("[step: {:10d}] saved SWA model to {}", "green")
+            _torch.save(self.swa_model.state_dict(), filename)
+            msg = _colored("[step: {:10d}] saved swa-model checkpoint to {}", "green")
             self.log.info(msg.format(self.step, filename))
 
         # wait if necessarry
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
+    def _logging_info(self, loss: float):
+        """A helper to log info to files.
+        """
+
+        # doing regular things
+        super()._logging_info(loss)
+
+        # outputing trasient swa model following inferecing frequencies
+        msg = _colored("[step: {:10d}] saved swa-model snapshot to {} in {} ms", "green")
+        if self.manager.rank == 0:
+            if self.step >= self.swa_start and self.step % self.cfg.training.rec_inference_freq == 0:
+
+                # filename
+                filename = _pathlib.Path(self.network_dir).joinpath("inferencers")
+                filename.mkdir(exist_ok=True)
+                filename = filename.joinpath(f"swa-model-{self.step:07d}.pth")
+
+                # timestamp
+                time = _datetime.utcnow().replace(tzinfo=_timezone.utc).isoformat()
+
+                # timer to measure performance
+                timer = TimerWalltime()
+
+                # in-memory dump
+                with _BytesIO() as mem:
+                    _torch.jit.save(_torch.jit.script(self.swa_model.module), mem)
+                    mem.seek(0)
+
+                    # write memory content to file
+                    with _lzmaopen(filename, "wb") as fobj:
+                        _torch.save({
+                            "step": self.step, "time": time, "model": mem.read(),
+                            "n_averaged": self.swa_model.n_averaged
+                        }, fobj)
+
+                self.log.info(msg.format(self.step, filename, timer.elapsed_time()))
+
+        # wait for rank 0 to finish the job
         if self.manager.distributed:
             _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 

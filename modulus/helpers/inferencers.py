@@ -58,4 +58,4 @@ class SaveModelInferencer(_Inferencer):
             with _lzma.open(filename, "wb") as fobj:
                 _torch.save({"step": step, "time": time, "model": mem.read()}, fobj)
 
-        self.log.info(_colored(f"[step: {step:10d}] saved model to {filename}", "green"))
+        self.log.info(_colored(f"[step: {step:10d}] saved model snapshot to {filename}", "green"))
