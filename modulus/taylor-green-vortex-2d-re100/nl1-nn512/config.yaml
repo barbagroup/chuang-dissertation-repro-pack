@@ -33,7 +33,7 @@ training:
 
 batch_size:
   nbatches: 1000
-  npts: 65536
+  npts: 262144
 
 custom:
   x: [-pi, pi]

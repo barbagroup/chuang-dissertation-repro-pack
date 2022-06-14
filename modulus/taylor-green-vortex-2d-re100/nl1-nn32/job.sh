@@ -12,7 +12,7 @@
 #SBATCH --cpus-per-gpu 6
 #SBATCH --partition=dgx2
 #SBATCH --time=0-04:00:00
-#SBATCH --output=logs/slurm-%A_%a.out
+#SBATCH --output=slurm-%A_%a.out
 #SBATCH --array=1-1%1  # submit this job 1 times but only run 1 at a time
 
 
