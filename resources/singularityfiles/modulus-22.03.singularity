@@ -1,6 +1,6 @@
 # vim:ft=singularity
-Bootstrap: docker-daemon
-From: modulus:22.03
+Bootstrap: docker
+From: nvcr.io/nvidia/modulus/modulus:22.03.1
 
 %environment
     export PS1="\[\033[31;1m\][Apptainer][\u@\h:\w]$ \[\033[0m\]"
