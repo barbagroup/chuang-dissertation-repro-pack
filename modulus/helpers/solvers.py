@@ -27,6 +27,7 @@ from modulus.hydra.utils import add_hydra_run_path as _add_hydra_run_path
 from modulus.continuous.domain.domain import Domain as _Domain
 from modulus.distributed.manager import DistributedManager as _DistributedManager
 from omegaconf import DictConfig as _DictConfig
+from omegaconf import OmegaConf as _OmegaConf
 
 
 class TimerCuda:
@@ -126,6 +127,10 @@ class SolverBase:
         # make directory
         if self.manager.rank == 0:
             _pathlib.Path(self.network_dir).mkdir(exist_ok=True)
+
+        # write config to tensorboard as pure text
+        if self.manager.rank == 0:
+            self.writer.add_text("config", f"<pre>{str(_OmegaConf.to_yaml(self.cfg))}</pre>")
 
         # distributed barrier before starting the train loop
         if self.manager.distributed:
@@ -398,10 +403,11 @@ class LBFGSSolver(SolverBase):
             if self.step >= self.swa_start:
                 self.swa_model.update_parameters(self.global_optimizer_model)
 
-            # save states
+            # save and print states
             self._logging_info(loss)
             self.save_checkpoint()
             self._print_stdout_info(loss, timer)
+            self._write_to_tensorboard()
 
         # training complete
         else:
@@ -456,7 +462,7 @@ class LBFGSSolver(SolverBase):
         super()._logging_info(loss)
 
         # outputing trasient swa model following inferecing frequencies
-        msg = _colored("[step: {:10d}] saved swa-model snapshot to {} in {} ms", "green")
+        msg = _colored("[step: {:10d}] saved swa-model snapshot to {} in {:10.3e} ms", "green")
         if self.manager.rank == 0:
             if self.step >= self.swa_start and self.step % self.cfg.training.rec_inference_freq == 0:
 
@@ -486,6 +492,43 @@ class LBFGSSolver(SolverBase):
                 self.log.info(msg.format(self.step, filename, timer.elapsed_time()))
 
         # wait for rank 0 to finish the job
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
+    def _write_to_tensorboard(self):
+        """Write to tensorboard.
+        """
+
+        if self.step % self.summary_freq != 0:
+            return
+
+        # timer to measure performance
+        timer = TimerWalltime()
+
+        # re-calculate each loss term
+        losses = self.domain.compute_losses(self.step)
+
+        # write each loss term
+        with _torch.no_grad():
+            for key, val in losses.items():
+                # gather data if running distributedly
+                if self.manager.distributed:
+                    _torch.distributed.all_reduce(val, _torch.distributed.ReduceOp.SUM)
+                    val /= self.manager.world_size
+                # only rank 0 can write
+                if self.manager.rank == 0:
+                    self.writer.add_scalar(f"Train/loss_{str(key)}", val, self.step, new_style=True)
+
+        # write total loss
+        if self.manager.rank == 0:
+            loss = self.aggregator(losses, self.step).detach().data
+            self.writer.add_scalar("Train/loss_aggregated", loss, self.step, new_style=True)
+
+            # print a message to stdout
+            msg = _colored(f"[step: {self.step:10d}] updated tensorboard in {timer.elapsed_time():10.3e} ms", "green")
+            self.log.info(msg)
+
+        # wait if necessarry
         if self.manager.distributed:
             _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
