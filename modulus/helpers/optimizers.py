@@ -324,3 +324,5 @@ class NonlinearCG(_Optimizer):
         else:
             if error:
                 raise RuntimeError("Infinite loop detected.")
+
+        return lossk

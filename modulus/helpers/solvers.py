@@ -311,7 +311,7 @@ class SolverBase:
             elapsed_time = elapsed_time.cpu().numpy() / self.manager.world_size
 
         try:
-            _last_lr = [group['lr'] for group in self.optimizer.param_groups][0]
+            _last_lr = [group.get('lr', float("NaN")) for group in self.optimizer.param_groups][0]
         except AttributeError as err:
             if "'NoneType' object has no attribute" in str(err):
                 _last_lr = float("NaN")
@@ -325,7 +325,7 @@ class SolverBase:
         timer.reset()
 
 
-class LBFGSSolver(SolverBase):
+class NonAdamSolver(SolverBase):
     """Using L-BFGS + SWA.
 
     Notes
@@ -340,7 +340,8 @@ class LBFGSSolver(SolverBase):
 
     def __init__(self, cfg: _DictConfig, domain: _Domain):
         super().__init__(cfg, domain)
-        assert cfg.optimizer._target_ == "torch.optim.LBFGS", "This solver can only be used with L-BFGS optimizer"
+        assert cfg.optimizer._target_ in ["torch.optim.LBFGS", "helpers.optimizers.NonlinearCG"], \
+            "This solver can only be used with L-BFGS or Nonlinear-CG optimizer"
 
         self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
         self.swa_start = cfg.batch_size.nbatches
@@ -389,15 +390,19 @@ class LBFGSSolver(SolverBase):
         self.save_checkpoint()
         self._print_stdout_info(loss, timer)
 
+        def callback(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
+            print("\t", _step, _loss, _gknorm, _alpha, _beta)
+
         # self.step means how many times the model is trained at the end of each iteration, so starts from 1
         for self.step in range(self.initial_step+1, self.max_steps+1):
 
             # use a new L-BFGS solver every time to discard states silently stored in the optimizer
             self.optimizer = _instantiate_optim(self.cfg, self.global_optimizer_model)
+            self.optimizer.callback = callback
 
             # train against the current data batch with L-BFGS
             loss = self.optimizer.step(self.objective_function)
-            assert not _torch.isnan(loss), "NaN for loss"
+            # assert not _torch.isnan(loss), "NaN for loss"
 
             # SWA moving average
             if self.step >= self.swa_start:
@@ -551,7 +556,6 @@ class NonlinearCGConf(_OptimizerConf):
     max_iters: int = 1000
     gtol: float = 1e-7
     ftol: float = 1e-7
-    disp: str = None
     error: bool = False
 
 
@@ -562,4 +566,9 @@ def register_optimizer_configs() -> None:
         group="optimizer",
         name="lbfgs",
         node=LBFGSConf,
+    )
+    _ConfigStore.instance().store(
+        group="optimizer",
+        name="nonlinear_cg",
+        node=NonlinearCGConf,
     )
