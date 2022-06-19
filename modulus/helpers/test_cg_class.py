@@ -37,7 +37,8 @@ class FakeRosenbrockSolutionModel(torch.nn.Module):
 def callback(stepk, lossk, gknorm, alphak, betak, *args, **kwargs):
     """A call back to print info every step.
     """
-    print(stepk, lossk, gknorm, alphak, betak)
+    if stepk % 500 == 0:
+        print(stepk, lossk, gknorm, alphak, betak)
 
 
 if __name__ == "__main__":
@@ -103,9 +104,9 @@ if __name__ == "__main__":
         loss.backward()
         return loss
 
+    tbg = time.time()
     optimizer.step(closure)
-    loss = float(closure())
-    print(f"Random problem, CPU, float32: loss = {loss}")
+    print(f"Random problem, CPU, float32: loss = {float(closure())}, walltime: {time.time()-tbg}")
 
     # Random fitting problem, GPU, float32
     # -----------------------------------------------------------------------------------------------------------------
@@ -136,6 +137,6 @@ if __name__ == "__main__":
             loss.backward()
             return loss
 
+        tbg = time.time()
         optimizer.step(closure)
-        loss = float(closure())
-        print(f"Random problem, GPU, float32: loss = {loss}")
+        print(f"Random problem, GPU, float32: loss = {float(closure())}, walltime: {time.time()-tbg}")

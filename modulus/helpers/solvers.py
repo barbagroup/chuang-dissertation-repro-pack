@@ -28,6 +28,7 @@ from modulus.continuous.domain.domain import Domain as _Domain
 from modulus.distributed.manager import DistributedManager as _DistributedManager
 from omegaconf import DictConfig as _DictConfig
 from omegaconf import OmegaConf as _OmegaConf
+from torch.optim import LBFGS as _LBFGS
 
 
 class TimerCuda:
@@ -397,12 +398,20 @@ class NonAdamSolver(SolverBase):
         for self.step in range(self.initial_step+1, self.max_steps+1):
 
             # use a new L-BFGS solver every time to discard states silently stored in the optimizer
-            self.optimizer = _instantiate_optim(self.cfg, self.global_optimizer_model)
-            self.optimizer.callback = callback
+            lbfgsoptimizer = _LBFGS(
+                self.global_optimizer_model.parameters(), lr=1, max_iter=1000, tolerance_grad=1e-7,
+                tolerance_change=1e-7, history_size=50, line_search_fn="strong_wolfe"
+            )
 
             # train against the current data batch with L-BFGS
-            loss = self.optimizer.step(self.objective_function)
-            # assert not _torch.isnan(loss), "NaN for loss"
+            loss = lbfgsoptimizer.step(self.objective_function)
+
+            # # use a new L-BFGS solver every time to discard states silently stored in the optimizer
+            # self.optimizer = _instantiate_optim(self.cfg, self.global_optimizer_model)
+            # self.optimizer.callback = callback
+
+            # # train against the current data batch with CG
+            # loss = self.optimizer.step(self.objective_function)
 
             # SWA moving average
             if self.step >= self.swa_start:

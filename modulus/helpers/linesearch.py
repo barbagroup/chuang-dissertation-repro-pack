@@ -23,6 +23,43 @@ ObjectiveFn1D = _Callable[[float], _Tuple[float, float]]
 
 
 @torchjit.script
+def cubic_minimum(braket: _Tuple[float, float], phis: _Tuple[float, float], dphis: _Tuple[float, float]):
+    """Finding the mimimum beteen [low, high] using a cubic approximation.
+
+    Note, this is only for estimating alpha when both dphis[0] and dphis[1] are both negative.
+    """
+
+    a, b = braket
+    phia, phib = phis
+    dphia, dphib = dphis
+
+    amb: float = a - b
+    apb: float = a + b
+    phiamb: float = phia - phib
+    dphiapb: float = dphia + dphib
+
+    # denominator = a**3 - 3 * a**2 * b + 3 * a * b**2 - b**3; ignored because will be canceled out
+    c1: float = amb * dphiapb - 2 * phiamb
+    c2: float = - 2 * apb * amb * dphiapb + amb * (a * dphia + b * dphib) + 3 * apb * phiamb
+    c3: float = 2 * apb * amb * (b * dphia + a * dphib) - amb * (a**2 * dphib + b**2 * dphia) - 6 * a * b * phiamb
+
+    # solving for where the derivatives of the cubic are zeros
+    candidate1: float = (-c2 + (-3*c1*c3 + c2**2)**0.5)/(3*c1)
+    candidate2: float = -(c2 + (-3*c1*c3 + c2**2)**0.5)/(3*c1)
+
+    # given both values in dphis are smaller than zero, so there are only limited possibilities for a cubic
+    if phis[0] <= phis[1]:  # both extremes are in [a, b], the 1st is minimum, and the 2nd is the maximum
+        return min(candidate1, candidate2)
+
+    # if phis[0] > phis[1], either none or both extremes are in [a, b]
+    if braket[0] < candidate1 < braket[1]:  # both are in [a, b]
+        return min(candidate1, candidate2)
+
+    # both are outside [a, b], then the higher bound is the current best alpha
+    return braket[1]
+
+
+@torchjit.script
 def standard_wolfe(
     alphak: float, phik: float, dphik: float, phi0: float,
     dphi0: float, delta: float, sigma: float
@@ -339,7 +376,7 @@ class HZLineSearchConf:
         self.tol: float = 1e-7
 
         # control loops
-        self.max_evals: int = 100
+        self.max_evals: int = 10
 
         # lock the writing access
         self._locked = True
@@ -440,14 +477,8 @@ def single_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
         # alpha does not meet both conditions -> replacing high, keeping high the only one isn't good
         else:
             data.swap("high")
-    else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-        if data.braket[0] == 0.0:  # comparing exact zero
-            if data.braket[1] != 0.0:
-                data.set_alpha(sum(data.braket)/2.)
-            else:
-                data.set_alpha(0.5)
-        else:
-            data.set_alpha(data.braket[0])
+    else:  # if running into this block, we didn't find a higher bound with positive slope, i.e., slope is negative
+        data.set_alpha(cubic_minimum(data.braket, data.phis, data.dphis))
         data.set_diverged()
         _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
         return data
@@ -525,7 +556,7 @@ def initial_alpha(
 def initial_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineSearchResults:
     """Get an initial interval that meet opsite slope condition.
     """
-    candidates = [0.0]
+    candidates = [0.0]  # candidates for the lower bound
 
     while data.counter < config.max_evals:
 
@@ -558,23 +589,19 @@ def initial_braketing(data: LineSearchResults, config: HZLineSearchConf) -> Line
                 # target does not meet both conditions -> replacing high to make high the only one always not good
                 else:
                     data.swap("high")
-            else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-                if data.braket[0] == 0.0:  # comparing exact zero
-                    if data.braket[1] != 0.0:
-                        data.set_alpha(sum(data.braket)/2.)
-                    else:
-                        data.set_alpha(0.5)
-                else:
-                    data.set_alpha(data.braket[0])
+            # if running into this block, upper bound has a negative slope
+            else:
+                # at this point, [a, b] contains zero or odd numbers of extremes (both max and min)
+                data.set_alpha(cubic_minimum(data.braket, data.phis, data.dphis))
                 data.set_diverged()
                 _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
                 return data
 
         # if phi'(cj) < 0 and phi(cj) <= epsk0
-        candidates.append(data.alpha)
+        candidates.append(data.alpha)  # candidates for the lower bound
         data.set_alpha(config.rho*data.alpha)  # hence rho must > 1
-    else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-        data.set_alpha(0.5)
+    else:  # if running into this block, we didn't find a good upper bound within max_evals iterations
+        # return the last alpha, which is the last candidate with negative slope and phi(alpha) <= epsk0
         data.set_diverged()
         _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
         return data
@@ -622,15 +649,9 @@ def linesearch(
         # probably we found an exact local minimum
         if abs(data.braket[1] - data.braket[0]) < config.tol:
             return data.alpha
+    # did not find a porper alpha
     else:
-        if data.braket[0] == 0.0:  # comparing exact zero
-            if data.braket[1] != 0.0:  # comparing exact zero
-                alpha = sum(data.braket) / 2.
-            else:
-                alpha = 0.5
-        else:
-            alpha = data.braket[0]
-        _warn(f"Exceeding function evaluation allowance. Use alhpa={alpha}.", RuntimeWarning)
-        return alpha
+        # but at least, both bounds have negative slopes, so we can use cubic approximation
+        return cubic_minimum(data.braket, data.phis, data.dphis)
 
     return data.alpha
