@@ -19,6 +19,12 @@ from helpers.linesearch import linesearch  # noqa: E402
 from helpers.optimizers import nonlinear_cg  # noqa: E402
 
 
+def callback(stepk, lossk, gknorm, alphak, betak, *args, **kwargs):
+    """A call back to print info every step.
+    """
+    print(stepk, lossk, gknorm, alphak, betak)
+
+
 if __name__ == "__main__":
 
     @torch.jit.script
@@ -72,13 +78,13 @@ if __name__ == "__main__":
     # cg test: float32
     # -----------------------------------------------------------------------------------------------------------------
     x0 = torch.tensor([0, 0], dtype=torch.float32, device="cpu")
-    results = nonlinear_cg(rosenbrock, x0, 1000, 1e-7, 1e-7, sys.stdout)
+    results = nonlinear_cg(rosenbrock, x0, 1000, 1e-7, 1e-7, callback=callback)
     print(f"\nNonlinear CG test, CPU, float32: {results.tolist()}\n")
 
     # cg test: float64
     # -----------------------------------------------------------------------------------------------------------------
     x0 = torch.tensor([0, 0], dtype=torch.float64, device="cpu")
-    results = nonlinear_cg(rosenbrock, x0, 1000, 1e-14, 1e-14, sys.stdout)
+    results = nonlinear_cg(rosenbrock, x0, 1000, 1e-14, 1e-14, callback=callback)
     print(f"\nNonlinear CG test, CPU, float64: {results.tolist()}\n")
 
     # GPU tests
@@ -88,11 +94,11 @@ if __name__ == "__main__":
         # cg test: gpu float32
         # --------------------------------------------------------------------------------------------------------------
         x0 = torch.tensor([0, 0], dtype=torch.float32, device="cuda")
-        results = nonlinear_cg(rosenbrock, x0, 1000, 1e-7, 1e-7, sys.stdout)
+        results = nonlinear_cg(rosenbrock, x0, 1000, 1e-7, 1e-7, callback=callback)
         print(f"\nNonlinear CG test, GPU, float32: {results.tolist()}\n")
 
         # cg test: gpu float64
         # --------------------------------------------------------------------------------------------------------------
         x0 = torch.tensor([0, 0], dtype=torch.float64, device="cuda")
-        results = nonlinear_cg(rosenbrock, x0, 1000, 1e-14, 1e-14, sys.stdout)
+        results = nonlinear_cg(rosenbrock, x0, 1000, 1e-14, 1e-14, callback=callback)
         print(f"\nNonlinear CG test, GPU, float64: {results.tolist()}\n")

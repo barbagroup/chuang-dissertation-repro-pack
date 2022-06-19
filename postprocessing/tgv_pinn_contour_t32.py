@@ -31,13 +31,13 @@ rootdir.joinpath("figures").mkdir(exist_ok=True)
 # read in data
 with h5py.File(modulusdir.joinpath("snapshots.h5"), "r") as dset:
     print("reading x")
-    x = dset["a100_8/x"][...]
-    print("reading yu")
-    y = dset["a100_8/y"][...]
+    x = dset["nl1-nn16/x"][...]
+    print("reading y")
+    y = dset["nl1-nn16/y"][...]
     print("reading u")
-    u = dset["a100_8/32/u"][...]
+    u = dset["nl1-nn16/32/u"][...]
     print("reading v")
-    v = dset["a100_8/32/v"][...]
+    v = dset["nl1-nn16/32/v"][...]
 
 # contour lines' levels
 levels = numpy.linspace(-0.6, 0.6, 13)
@@ -66,4 +66,4 @@ cbar = fig.colorbar(cm.ScalarMappable(colors.Normalize(-0.6, 0.6), "cividis"), a
 cbar.add_lines(levels=levels, colors=["k"]*levels.size, linewidths=0.5)
 
 # save
-fig.savefig(rootdir.joinpath("figures", "tgv-pinn-contour-t32.png"), bbox_inches="tight", dpi=166)
+fig.savefig(rootdir.joinpath("figures", "tgv-pinn-contour-t32-nl1-nn16.png"), bbox_inches="tight", dpi=166)

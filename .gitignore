@@ -4,6 +4,8 @@
 # log files
 **/.logamgx
 **/*.log
+**/slurm*.out
+**/slurm*.err
 
 # temporary folders
 **/tmp

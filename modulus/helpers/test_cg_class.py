@@ -34,12 +34,18 @@ class FakeRosenbrockSolutionModel(torch.nn.Module):
         return float(loss)
 
 
+def callback(stepk, lossk, gknorm, alphak, betak, *args, **kwargs):
+    """A call back to print info every step.
+    """
+    print(stepk, lossk, gknorm, alphak, betak)
+
+
 if __name__ == "__main__":
 
     # Rosenbrock, CPU, float32
     # -----------------------------------------------------------------------------------------------------------------
     x = FakeRosenbrockSolutionModel()
-    optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-7, ftol=1e-7, disp=sys.stdout)
+    optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-7, ftol=1e-7, callback=callback)
     tbg = time.time()
     optimizers.step(x.closure)
     print(f"Rosenbrock, CPU, float32: x = {x.x.tolist()}, walltime: {time.time()-tbg}")
@@ -47,7 +53,7 @@ if __name__ == "__main__":
     # Rosenbrock, CPU, float64
     # -----------------------------------------------------------------------------------------------------------------
     x = FakeRosenbrockSolutionModel().to(torch.float64)
-    optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-14, ftol=1e-14, disp=sys.stdout)
+    optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-14, ftol=1e-14, callback=callback)
     tbg = time.time()
     optimizers.step(x.closure)
     print(f"Rosenbrock, CPU, float64: x = {x.x.tolist()}, walltime: {time.time()-tbg}")
@@ -56,7 +62,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------------------------------------------------
     if torch.cuda.is_available():
         x = FakeRosenbrockSolutionModel().to("cuda")
-        optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-7, ftol=1e-7, disp=sys.stdout)
+        optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-7, ftol=1e-7, callback=callback)
         tbg = time.time()
         optimizers.step(x.closure)
         print(f"Rosenbrock, GPU, float32: x = {x.x.detach().cpu().tolist()}, walltime: {time.time()-tbg}")
@@ -65,7 +71,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------------------------------------------------
     if torch.cuda.is_available():
         x = FakeRosenbrockSolutionModel().to(torch.float64).to("cuda")
-        optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-14, ftol=1e-14, disp=sys.stdout)
+        optimizers = NonlinearCG(x.parameters(), max_iters=100, gtol=1e-14, ftol=1e-14, callback=callback)
         tbg = time.time()
         optimizers.step(x.closure)
         print(f"Rosenbrock, GPU, float64: x = {x.x.detach().cpu().tolist()}, walltime: {time.time()-tbg}")
@@ -88,7 +94,7 @@ if __name__ == "__main__":
 
     # loss and cg optimizer
     lossfn = torch.nn.MSELoss()
-    optimizer = NonlinearCG(model.parameters(), max_iters=10000, gtol=1e-7, ftol=1e-7, disp=sys.stdout)
+    optimizer = NonlinearCG(model.parameters(), max_iters=10000, gtol=1e-7, ftol=1e-7, callback=callback)
 
     def closure():
         optimizer.zero_grad()
@@ -121,7 +127,7 @@ if __name__ == "__main__":
 
         # loss and cg optimizer
         lossfn = torch.nn.MSELoss().to(torch.float64).to("cuda")
-        optimizer = NonlinearCG(model.parameters(), max_iters=10000, gtol=1e-7, ftol=1e-7, disp=sys.stdout)
+        optimizer = NonlinearCG(model.parameters(), max_iters=10000, gtol=1e-7, ftol=1e-7, callback=callback)
 
         def closure():
             optimizer.zero_grad()

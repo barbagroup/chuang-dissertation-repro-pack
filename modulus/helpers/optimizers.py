@@ -10,8 +10,6 @@
 """
 
 # otherwise, import normally
-from os import devnull as _devnull
-from io import TextIOWrapper as _TextIOWrapper
 from typing import Callable as _Callable
 from typing import Tuple as _Tuple
 from typing import List as _List
@@ -56,16 +54,16 @@ def nonlinear_cg(
     max_iters: int = 1000,
     gtol: float = 1e-7,
     ftol: float = 1e-7,
-    disp: _Optional[_TextIOWrapper] = None,
     error: bool = False,
+    callback: _Optional[_Callable[[float, float, float, float, float, _Tensor, _Tensor, _Tensor], None]] = None,
     **kwargs
 ):
     """Nonlinear conjugate-gradient optimizer.
     """
 
-    # null writer if disp is not provided
-    if disp is None:
-        disp = open(_devnull, "w")
+    def _dummy_callback(*args, **kwargs):
+        """A dummy callback function."""
+        pass
 
     # make sure objective function is differentiable (as others will work under torch.no_grad)
     objective = _torchenablegrad()(objective)
@@ -79,7 +77,7 @@ def nonlinear_cg(
     betak: float = float("NaN")
     Qk: float = 0.0
     Ck: float = 0.0
-    disp.write(f"{stepk}, {lossk}, {gk.abs().max()}\n")
+    callback = callback if callback is not None else _dummy_callback
 
     # configuration of Hager-Zhang line search algorithm
     config: _HZLineSearchConf = _HZLineSearchConf()
@@ -89,6 +87,7 @@ def nonlinear_cg(
     # local variables
     fcond: _List[bool] = [False, False]  # loss-based condition for the most recent two steps
     gcond: bool = False  # the current step gradient-based stop condition
+    callback(stepk, lossk, float("NaN"), float("NaN"), float("NaN"), xk, gk, dk)
 
     for stepk in range(max_iters):
 
@@ -133,7 +132,7 @@ def nonlinear_cg(
         lossk, gk = losskp1, gkp1
 
         # write result and save update state dict
-        disp.write(f"{stepk}, {lossk}, {gknorm}, {alphak}, {betak}\n")
+        callback(stepk, lossk, gknorm, alphak, betak, xk, gk, dk)
 
         # either condition was satisfied we can terminate the optimization
         if all(fcond) or gcond:
@@ -150,19 +149,18 @@ class NonlinearCG(_Optimizer):
     """A pytorch optimizer wrapper for nonlinear conjugate-gradient solver.
     """
 
-    def __init__(self, params, max_iters=1000, gtol=1e-6, ftol=1e-6, disp=None, error=False, **kwargs):
+    def __init__(self, params, max_iters=1000, gtol=1e-6, ftol=1e-6, error=False, callback=None, **kwargs):
 
-        defaults = dict(max_iters=max_iters, gtol=gtol, ftol=ftol, disp=disp, error=error, lnskwargs=kwargs)
+        defaults = dict(max_iters=max_iters, gtol=gtol, ftol=ftol, error=error, lnskwargs=kwargs)
         super().__init__(params, defaults)
         assert len(self.param_groups) == 1, "NonlinearCG doesn't support per-parameter options (parameter groups)"
 
         # aliases
         self._params = self.param_groups[0]["params"]
         self._state0 = self.state[self._params[0]]
-
-        # for convenience
         self.dtype = self._params[0].dtype
         self.device = self._params[0].device
+        self.callback = callback if callback is not None else self._dummy_callback
 
         # to keep the record for the state
         self._state0["stepk"] = None
@@ -177,6 +175,12 @@ class NonlinearCG(_Optimizer):
 
         # closure should also be in the state dict, but it's probably not picklable
         self._closure = None
+
+    @_no_grad()
+    def _dummy_callback(self, *args, **kwargs):
+        """A dummy callback function.
+        """
+        pass
 
     @_no_grad()
     def _clone_param(self):
@@ -237,19 +241,11 @@ class NonlinearCG(_Optimizer):
         """
 
         # retrieve configurations
-        disp = self.param_groups[0]["disp"]
         max_iters = self.param_groups[0]["max_iters"]
         gtol = self.param_groups[0]["gtol"]
         ftol = self.param_groups[0]["ftol"]
-        disp = self.param_groups[0]["disp"]
         error = self.param_groups[0]["error"]
         lnskwargs = self.param_groups[0]["lnskwargs"]
-
-        # null writer if disp is not provided
-        _stdout = False
-        if disp is None:
-            _stdout = True
-            disp = open(_devnull, "w")
 
         # make sure objective function is differentiable (as others will work under torch.no_grad)
         self._closure = _torchenablegrad()(closure)
@@ -264,7 +260,6 @@ class NonlinearCG(_Optimizer):
         betak: float = float("NaN")
         Qk: float = 0.0
         Ck: float = 0.0
-        disp.write(f"{stepk}, {lossk}, {gk.abs().max()}\n")
 
         # save back to state dictionary
         self._state0.update(stepk=stepk, lossk=lossk, xk=xk, gk=gk, dk=dk, alphak=alphak, betak=betak, Qk=Qk, Ck=Ck)
@@ -277,6 +272,7 @@ class NonlinearCG(_Optimizer):
         # local variables
         fcond: _List[bool] = [False, False]  # loss-based condition for the most recent two steps
         gcond: bool = False  # the current step gradient-based stop condition
+        self.callback(stepk, lossk, float("NaN"), float("NaN"), float("NaN"), xk, gk, dk)
 
         for stepk in range(max_iters):
 
@@ -317,8 +313,8 @@ class NonlinearCG(_Optimizer):
             # update loss and gradients
             lossk, gk = losskp1, gkp1
 
-            # write result and save update state dict
-            disp.write(f"{stepk}, {lossk}, {gknorm}, {alphak}, {betak}\n")
+            # pass results to the callback function
+            self.callback(stepk, lossk, gknorm, alphak, betak, xk, gk, dk)
             self._state0.update(stepk=stepk, lossk=lossk, xk=xk, gk=gk, dk=dk, alphak=alphak, betak=betak, Qk=Qk, Ck=Ck)
 
             # either condition was satisfied we can terminate the optimization
@@ -328,6 +324,3 @@ class NonlinearCG(_Optimizer):
         else:
             if error:
                 raise RuntimeError("Infinite loop detected.")
-
-        if _stdout:
-            disp.close()

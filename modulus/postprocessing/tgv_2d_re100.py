@@ -35,7 +35,7 @@ from pandas import DataFrame
 from pandas import Index
 from pandas import MultiIndex
 from pandas import Series
-from sympy import sympify
+from pandas import concat as pdconcat
 from torch import tensor as torchtensor
 from torch import full_like as torchfulllike
 from torch import from_numpy as torchfromnumpy
@@ -44,7 +44,9 @@ from torch import from_numpy as torchfromnumpy
 for parent in pathlib.Path(__file__).resolve().parents:
     if parent.joinpath("helpers").is_dir():
         sys.path.insert(0, str(parent))
-        from helpers.utils import get_model_from_file  # pylint: disable=import-error
+        from helpers.utils import get_rawmodel_from_file  # pylint: disable=import-error
+        from helpers.utils import get_swamodel_from_file  # pylint: disable=import-error
+        from helpers.utils import process_domain  # pylint: disable=import-error
         break
 else:
     raise FileNotFoundError("Couldn't find module `helpers`.")
@@ -93,10 +95,9 @@ def get_case_data(cfg, workdir, fields=["u", "v", "p"]):
     """Get data from a single case.
     """
 
-    # prepare periodicity
-    xbg = ybg = - cfg.custom.scale * nppi
-    xed = yed = cfg.custom.scale * nppi
-    period = {"x": (float(xbg), float(xed)), "y": (float(ybg), float(yed))}
+    # domain bounds
+    xbg, xed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
 
     # identify the last iteration
     mxstep = max([
@@ -105,15 +106,15 @@ def get_case_data(cfg, workdir, fields=["u", "v", "p"]):
     ], key=int)
 
     # get the computational graph
-    _, _, graph, dtype = get_model_from_file(cfg, workdir.joinpath("inferencers", f"flow-net-{mxstep}.pth"), period)
+    _, _, graph, dtype = get_rawmodel_from_file(cfg, workdir.joinpath("inferencers", f"flow-net-{mxstep}.pth"), 2)
 
     # get a subset in the computational graph that gives us desired quantities
     model = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
 
     # gridlines
-    npx = nplinspace(-cfg.custom.scale*nppi, cfg.custom.scale*nppi, 513)  # vertices
+    npx = nplinspace(xbg, xed, 513)  # vertices
     npx = (npx[1:] + npx[:-1]) / 2  # cell centers
-    npy = nplinspace(-cfg.custom.scale*nppi, cfg.custom.scale*nppi, 513)  # vertices
+    npy = nplinspace(ybg, yed, 513)  # vertices
     npy = (npy[1:] + npy[:-1]) / 2  # cell centers
     npx, npy = npmeshgrid(npx, npy)
     shape = npx.shape
@@ -153,78 +154,79 @@ def get_error_vs_walltime(cfg, workdir, fields):
     """Get error v.s. walltime
     """
 
-    # prepare periodicity
-    xbg = ybg = - cfg.custom.scale * nppi
-    xed = yed = cfg.custom.scale * nppi
-    period = {"x": (float(xbg), float(xed)), "y": (float(ybg), float(yed))}
+    # domain bounds
+    xbg, xed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
 
     # gridlines
-    npx = nplinspace(-cfg.custom.scale*nppi, cfg.custom.scale*nppi, 513, dtype=npfloat32)  # vertices
+    npx = nplinspace(xbg, xed, 513, dtype=npfloat32)  # vertices
     npx = (npx[1:] + npx[:-1]) / 2  # cell centers
-    npy = nplinspace(-cfg.custom.scale*nppi, cfg.custom.scale*nppi, 513, dtype=npfloat32)  # vertices
+    npy = nplinspace(ybg, yed, 513, dtype=npfloat32)  # vertices
     npy = (npy[1:] + npy[:-1]) / 2  # cell centers
     npx, npy = [val.reshape(-1, 1) for val in npmeshgrid(npx, npy)]
 
     # a copy of torch version
     x, y = torchfromnumpy(npx), torchfromnumpy(npy)
 
-    # initialize data holders
-    data = DataFrame(
-        data=None,
-        index=Index([], dtype=int, name="iteration"),
-        columns=MultiIndex.from_product(
-            [["l1norm", "l2norm"], fields, cfg.eval_times]
-        ).append(Index([("timestamp", "", "")])),
-    )
-
     def single_process(rank, inputs, outputs):
         """A single workder in multi-processing setting.
         """
         while True:
             try:
-                fname, period = inputs.get(True, 2)
+                rawfile, swafile = inputs.get(True, 2)
             except multiprocessing.queues.Empty:
                 inputs.close()
                 outputs.close()
                 return
 
-            print(f"[Rank {rank}] processing {fname.name}")
-
             # initialize data holders
             temp = Series(
                 data=None, dtype=float,
                 index=MultiIndex.from_product(
-                    [["l1norm", "l2norm"], fields, cfg.eval_times]
-                ).append(Index([("timestamp", "", "")])),
+                    [["raw", "swa"], ["l1norm", "l2norm"], fields, cfg.eval_times]
+                ).append(Index([("timestamp", "", "", "")])),
             )
 
             # get the computational graph
-            step, timestamp, graph, _ = get_model_from_file(cfg, fname, period)
+            print(f"[Rank {rank}] processing {rawfile.name}")
+            step, timestamp, graph, _ = get_rawmodel_from_file(cfg, rawfile, 2)
+
+            # get a subset in the computational graph that gives us desired quantities
+            rawmodel = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
+
+            # get swa model if it exists, otherwise, duplicate rawmodel
+            print(f"[Rank {rank}] processing {swafile.name}")
+            if swafile.is_file():
+                swamodel = get_swamodel_from_file(cfg, rawmodel, swafile)
+            else:
+                swamodel = rawmodel
 
             # convert to epoch time
             temp.loc["timestamp"] = datetime.datetime.fromisoformat(timestamp).timestamp()
 
-            # get a subset in the computational graph that gives us desired quantities
-            model = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
-
             for time in cfg.eval_times:
-                preds = model({"x": x, "y": y, "t": torchfulllike(x, time)})
-                preds = {k: v.detach().cpu().numpy() for k, v in preds.items()}
+                rawpreds = rawmodel({"x": x, "y": y, "t": torchfulllike(x, time)})
+                rawpreds = {k: v.detach().cpu().numpy() for k, v in rawpreds.items()}
+                swapreds = swamodel({"x": x, "y": y, "t": torchfulllike(x, time)})
+                swapreds = {k: v.detach().cpu().numpy() for k, v in swapreds.items()}
 
                 for key in fields:
                     ans = analytical_solution(npx, npy, time, 0.01, key)
-                    err = abs(preds[key]-ans)
-                    temp.loc[("l1norm", key, time)] = float(4 * nppi**2 * err.sum() / err.size)
-                    temp.loc[("l2norm", key, time)] = float(2 * nppi * npsqrt((err**2).sum()/err.size))
+                    rawerr = abs(rawpreds[key]-ans)
+                    swaerr = abs(swapreds[key]-ans)
+                    temp.loc[("raw", "l1norm", key, time)] = float(4 * nppi**2 * rawerr.sum() / rawerr.size)
+                    temp.loc[("raw", "l2norm", key, time)] = float(2 * nppi * npsqrt((rawerr**2).sum()/rawerr.size))
+                    temp.loc[("swa", "l1norm", key, time)] = float(4 * nppi**2 * swaerr.sum() / swaerr.size)
+                    temp.loc[("swa", "l2norm", key, time)] = float(2 * nppi * npsqrt((swaerr**2).sum()/swaerr.size))
 
             outputs.put((step, temp))
             inputs.task_done()
-            print(f"[Rank {rank}] done processing {fname.name}")
+            print(f"[Rank {rank}] done processing {rawfile.name} and {swafile.name}")
 
     # collect all model snapshots
     files = multiprocessing.JoinableQueue()
-    for i, file in enumerate(workdir.joinpath("inferencers").glob("flow-net-*.pth")):
-        files.put((file, period))
+    for i, rawfile in enumerate(workdir.joinpath("inferencers").glob("flow-net-*.pth")):
+        files.put((rawfile, rawfile.with_name(rawfile.name.replace("flow-net", "swa-model"))))
 
     # initialize a queue for outputs
     results = multiprocessing.Queue()
@@ -240,9 +242,13 @@ def get_error_vs_walltime(cfg, workdir, fields):
     files.join()
 
     # extra from result queue
+    data = {}
     while not results.empty():
         step, result = results.get(False)
-        data.loc[step] = result
+        data[step] = result
+
+    # combine into a big table and with iteration/step as the indices
+    data = pdconcat(data, axis=1).transpose().rename_axis("iterations")
 
     # sort with iteration numbers
     data = data.sort_index()
@@ -253,7 +259,7 @@ def get_error_vs_walltime(cfg, workdir, fields):
     return data
 
 
-def main(workdir):
+def main(workdir, force=False):
     """Main function.
     """
 
@@ -261,60 +267,74 @@ def main(workdir):
     workdir.joinpath("output").mkdir(exist_ok=True)
 
     # cases' names
-    cases = [f"a100-{n}" for n in [1, 2, 4, 8]]
+    # cases = [f"nl6-nn256/a100-{n}" for n in [1, 2, 4, 8]]
+    # cases.extend([f"nl1-nn{n}" for n in [16]])
+    cases = [f"nl1-nn{n}" for n in [32, 64, 128, 256, 512]]
 
     # target fields
     fields = ["u", "v", "p"]
 
-    # initialize a data holder for errors
-    data = DataFrame(
-        data=None, dtype=float,
-        index=Index([], dtype=float, name="time"),
-        columns=MultiIndex.from_product((cases, ["l1norm", "l2norm"], fields)),
-    )
+    # initialize a data holder for errors vs simulation time
+    sim_time_err = []
+
+    # initialize a data holder for errors vs iteration/wall-time
+    wall_time_err = []
 
     # hdf5 file
-    with h5open(workdir.joinpath("output", "snapshots.h5"), "w") as h5file:
+    with h5open(workdir.joinpath("output", "snapshots.h5"), "a") as h5file:
 
         # read and process data case-by-case
         for job in cases:
+
+            if f"{job}/x" in h5file:
+                del h5file[f"{job}"]
+
             print(f"Handling {job}")
 
             jobdir = workdir.joinpath(job, "outputs")
 
+            # snapshot solutions and errors wrt simulation time
             cfg = OmegaConf.load(jobdir.joinpath(".hydra", "config.yaml"))
             cfg.device = "cpu"
-            cfg.custom.scale = float(sympify(cfg.custom.scale).evalf())
             cfg.eval_times = list(range(0, 101, 2))
 
-            data[job], snapshots = get_case_data(cfg, jobdir, fields)
+            err, snapshots = get_case_data(cfg, jobdir, fields)
+            sim_time_err.append(err)
 
             h5file.create_dataset(f"{job}/x", data=snapshots["x"], compression="gzip")
             h5file.create_dataset(f"{job}/y", data=snapshots["y"], compression="gzip")
             for time, field in itertools.product(cfg.eval_times, fields):
                 h5file.create_dataset(f"{job}/{time}/{field}", data=snapshots[time][field], compression="gzip")
 
-    data.to_csv(workdir.joinpath("output", "sim-time-errors.csv"))
+            # errors wrt iterations/wall-time
+            cfg.eval_times = [2, 8, 32]
+            wall_time_err.append(get_error_vs_walltime(cfg, jobdir, fields))
 
-    # get error versus wall time from a100_8
-    jobdir = workdir.joinpath("a100_8", "outputs")
-    cfg = OmegaConf.load(jobdir.joinpath(".hydra", "config.yaml"))
-    cfg.device = "cpu"
-    cfg.custom.scale = float(sympify(cfg.custom.scale).evalf())
-    cfg.eval_times = [2, 8, 32]
-    data = get_error_vs_walltime(cfg, workdir.joinpath("a100_8", "outputs"), fields)
-    data.to_csv(workdir.joinpath("output", "wall-time-errors.csv"))
+    # concat and export errors wrt simulation time
+    sim_time_err = pdconcat(sim_time_err, axis=1, keys=cases)
+    sim_time_err.to_csv(workdir.joinpath("output", "sim-time-errors.csv"))
+
+    # concat and export errors wrt simulation time
+    wall_time_err = pdconcat(wall_time_err, axis=1, keys=cases)
+    wall_time_err.to_csv(workdir.joinpath("output", "wall-time-errors.csv"))
 
 
 if __name__ == "__main__":
+    import argparse
 
     # find the root of the folder `modulus`
     for root in pathlib.Path(__file__).resolve().parents:
-        if root.joinpath("modulus").is_dir():
+        if root.joinpath("taylor-green-vortex-2d-re100").is_dir():
             break
     else:
         raise FileNotFoundError("Couldn't locate the path to the folder `modulus`.")
 
-    root = root.joinpath("modulus", "taylor-green-vortex-2d-re100", "nl6-nn256")
+    root = root.joinpath("taylor-green-vortex-2d-re100")
 
-    main(root)
+    # cmd arguments
+    parser = argparse.ArgumentParser(description="Post-processing Modulus Cylinder 2D Re200")
+    parser.add_argument("--force", action="store_true", default=False, help="Force re-write.")
+    args = parser.parse_args()
+
+    # calling the main function
+    sys.exit(main(root, args.force))

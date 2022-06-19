@@ -545,6 +545,16 @@ class LBFGSConf(_OptimizerConf):
     line_search_fn: _Optional[str] = "strong_wolfe"
 
 
+@dataclass
+class NonlinearCGConf(_OptimizerConf):
+    _target_: str = "helpers.optimizers.NonlinearCG"
+    max_iters: int = 1000
+    gtol: float = 1e-7
+    ftol: float = 1e-7
+    disp: str = None
+    error: bool = False
+
+
 def register_optimizer_configs() -> None:
     """Register for custom optimizers.
     """
