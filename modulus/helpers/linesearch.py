@@ -8,30 +8,24 @@
 
 """Line search algorithms.
 """
+from warnings import warn as _warn
 from typing import Tuple as _Tuple
+from typing import List as _List
 from typing import Dict as _Dict
 from typing import Union as _Union
 from typing import Callable as _Callable
-from torch import zeros as _torchzeros
-from torch import ones as _torchones
-from torch import tensor as _torchtensor
-from torch import nan as _torchnan
 from torch import Tensor as _Tensor
-from torch import dtype as _torchdtype
-from torch import device as _torchdevice
-from torch import isinf as _torchisinf
-from torch import isnan as _torchisnan
 from torch import jit as torchjit
 
 
 # type shorhand for 1D objective function
-ObjectiveFn1D = _Callable[[_Tensor], _Tuple[_Tensor, _Tensor]]
+ObjectiveFn1D = _Callable[[float], _Tuple[float, float]]
 
 
 @torchjit.script
 def standard_wolfe(
-    alphak: _Tensor, phik: _Tensor, dphik: _Tensor, phi0: _Tensor,
-    dphi0: _Tensor, delta: _Tensor, sigma: _Tensor
+    alphak: float, phik: float, dphik: float, phi0: float,
+    dphi0: float, delta: float, sigma: float
 ) -> bool:
     """Standard Wolfe condition to indicate if a line search should stop.
 
@@ -40,15 +34,15 @@ def standard_wolfe(
     A `bool` indicating if the standard Wolfe condition is met.
     """
 
-    cond1: bool = bool((phik - phi0) <= delta * alphak * dphi0)
-    cond2: bool = bool(dphik >= sigma * dphi0)
+    cond1: bool = (phik - phi0) <= delta * alphak * dphi0
+    cond2: bool = dphik >= sigma * dphi0
     return (cond1 and cond2)
 
 
 @torchjit.script
 def strong_wolfe(
-    alphak: _Tensor, phik: _Tensor, dphik: _Tensor, phi0: _Tensor,
-    dphi0: _Tensor, delta: _Tensor, sigma: _Tensor
+    alphak: float, phik: float, dphik: float, phi0: float,
+    dphi0: float, delta: float, sigma: float
 ) -> bool:
     """Strong Wolfe condition to indicate if a line search should stop.
 
@@ -57,15 +51,15 @@ def strong_wolfe(
     A `bool` indicating if the strong Wolfe condition is met.
     """
 
-    cond1: bool = bool((phik - phi0) <= delta * alphak * dphi0)
-    cond2: bool = bool(dphik.abs() <= sigma * dphi0.abs())
+    cond1: bool = (phik - phi0) <= delta * alphak * dphi0
+    cond2: bool = abs(dphik) <= sigma * abs(dphi0)
     return (cond1 and cond2)
 
 
 @torchjit.script
 def approximate_wolfe(
-    phik: _Tensor, dphik: _Tensor, phi0: _Tensor, dphi0: _Tensor,
-    epsk0: _Tensor, delta: _Tensor, sigma: _Tensor
+    phik: float, dphik: float, phi0: float, dphi0: float,
+    epsk0: float, delta: float, sigma: float
 ) -> bool:
     """Approximate Wolfe condition proposed by Hager and Zhang (2005).
 
@@ -79,14 +73,14 @@ def approximate_wolfe(
     1. 0 < delta < sigma < 1.
     2. delta < min(0.5, sigma)
     """
-    cond1: bool = bool(dphik <= (2.0 * delta - 1.0) * dphi0)
-    cond2: bool = bool(dphik >= sigma * dphi0)
-    cond3: bool = bool(phik <= epsk0)
+    cond1: bool = dphik <= (2.0 * delta - 1.0) * dphi0
+    cond2: bool = dphik >= sigma * dphi0
+    cond3: bool = phik <= epsk0
     return (cond1 and cond2 and cond3)
 
 
 @torchjit.script
-def opsite_slope_condition(phia: _Tensor, dphia: _Tensor, dphib: _Tensor, epsk0: _Tensor) -> None:
+def opsite_slope_condition(phia: float, dphia: float, dphib: float, epsk0: float) -> None:
     """Check for the opsite slope condition in Hager and Zhang, 2005.
 
     Notes
@@ -102,11 +96,11 @@ def opsite_slope_condition(phia: _Tensor, dphia: _Tensor, dphib: _Tensor, epsk0:
 
 
 @torchjit.script
-def secant_step(a: _Tensor, b: _Tensor, dphia: _Tensor, dphib: _Tensor) -> _Tensor:
+def secant_step(a: float, b: float, dphia: float, dphib: float) -> float:
     """Calculate the result of a single secant step.
     """
-    val: _Tensor = (a * dphib - b * dphia) / (dphib - dphia)
-    if _torchisinf(val) or _torchisnan(val):
+    val: float = (a * dphib - b * dphia) / (dphib - dphia)
+    if val == float("inf") or val != val:
         val = (a + b) / 2.0
     return val
 
@@ -116,7 +110,7 @@ class LineSearchResults:
     """A data holder to store line searching results.
     """
 
-    def __init__(self, phi: ObjectiveFn1D, checkfn: _Callable, epsk: _Tensor):
+    def __init__(self, phi: ObjectiveFn1D, checkfn: _Callable, epsk: float):
 
         # enable write permision
         self._locked: bool = False
@@ -128,7 +122,7 @@ class LineSearchResults:
         self.checkfn: _Callable = checkfn
 
         # parameter for error tolerance at alpha = 0
-        self.epsk: _Tensor = epsk.clone()
+        self.epsk: float = epsk
 
         # convergence status
         self.converged: bool = False
@@ -136,25 +130,25 @@ class LineSearchResults:
         self.message: str = ""
 
         # function value adn derivative at alpha = 0
-        results: _Tuple[_Tensor, _Tensor] = self.phi(_torchzeros((), dtype=epsk.dtype, device=epsk.device))
-        self.phi0: _Tensor = results[0]
-        self.dphi0: _Tensor = results[1]
+        results: _Tuple[float, float] = self.phi(0.0)
+        self.phi0: float = results[0]
+        self.dphi0: float = results[1]
 
         # check if initial dphi0 < 0
         assert self.dphi0 < 0, f"{self.phi0}, {self.dphi0}"
 
         # phi(0) plus some small tolerance term, e.g., phi(0) + epsilon * |phi(0)|
-        self.epsk0: _Tensor = self.phi0 + epsk
+        self.epsk0: float = self.phi0 + epsk
 
         # braket bounds, their funtion values, and their derivatives
-        self.braket: _Tensor = _torchtensor((_torchnan, _torchnan))
-        self.phis: _Tensor = _torchtensor((_torchnan, _torchnan))
-        self.dphis: _Tensor = _torchtensor((_torchnan, _torchnan))
+        self.braket: _List[float, float] = [float("NaN"), float("NaN")]
+        self.phis: _List[float, float] = [float("NaN"), float("NaN")]
+        self.dphis: _List[float, float] = [float("NaN"), float("NaN")]
 
         # possible alpha_k, its function values, and its derivative
-        self.alpha: _Tensor = _torchtensor(_torchnan)
-        self.phik: _Tensor = _torchtensor(_torchnan)
-        self.dphik: _Tensor = _torchtensor(_torchnan)
+        self.alpha: float = float("NaN")
+        self.phik: float = float("NaN")
+        self.dphik: float = float("NaN")
 
         # tracking how many time the phi function has been called
         self.counter: int = 0
@@ -162,7 +156,7 @@ class LineSearchResults:
         # disable write permision
         self._locked = True
 
-    def __setattr__(self, key: str, val: _Union[_Tensor, int, bool, str]):
+    def __setattr__(self, key: str, val: _Union[int, bool, str, float]):
         """Disable direct writing access to attributes.
         """
         if key != "_locked" and self._locked:
@@ -171,63 +165,48 @@ class LineSearchResults:
 
     def __str__(self):
         s = ""
-        s += f"phi0: {self.phi0.item()}, dphi0: {self.dphi0.item()}\n"
-        s += f"alphak: {self.alpha.item()}, phik: {self.phik.item()}, dphik: {self.dphik.item()}\n"
-        s += f"low: {self.braket[0].item()}, phi_low: {self.phis[0].item()}, dphi_low: {self.dphis[0].item()}\n"
-        s += f"high: {self.braket[1].item()}, phi_high: {self.phis[1].item()}, dphi_high: {self.dphis[1].item()}\n"
+        s += f"phi0: {self.phi0}, dphi0: {self.dphi0}\n"
+        s += f"alphak: {self.alpha}, phik: {self.phik}, dphik: {self.dphik}\n"
+        s += f"low: {self.braket[0]}, phi_low: {self.phis[0]}, dphi_low: {self.dphis[0]}\n"
+        s += f"high: {self.braket[1]}, phi_high: {self.phis[1]}, dphi_high: {self.dphis[1]}\n"
         s += f"epsk: {self.epsk}, epsk0: {self.epsk0}"
         return s
 
-    def to(self, val: _Union[_torchdtype, _torchdevice]):
-        """Move data to a device or set the precision.
-        """
-        new = self.__class__(self.phi, self.checkfn, self.epsk)
-        new._locked = False
-        new.epsk = self.epsk.clone().to(val)
-        new.phi0 = self.phi0.clone().to(val)
-        new.dphi0 = self.dphi0.clone().to(val)
-        new.epsk0 = self.epsk0.clone().to(val)
-        new.braket = self.braket.clone().to(val)
-        new.phis = self.phis.clone().to(val)
-        new.dphis = self.dphis.clone().to(val)
-        new.alpha = self.alpha.clone().to(val)
-        new.phik = self.phik.clone().to(val)
-        new.dphik = self.dphik.clone().to(val)
-        new._locked = True
-        return new
-
-    def set_alpha(self, val: _Tensor):
+    def set_alpha(self, val: float):
         """Set a new candidate alpha and calculate the loss and derivative.
         """
-        results: _Tuple[_Tensor, _Tensor] = self.phi(val)
+        results: _Tuple[float, float] = self.phi(val)
         self._locked = False
         self.counter += 1
-        self.alpha.copy_(val.clone())
-        self.phik.copy_(results[0])
-        self.dphik.copy_(results[1])
+        self.alpha = val
+        self.phik = results[0]
+        self.dphik = results[1]
         self._locked = True
-        if self.checkfn(self): self.set_converged()  # noqa: E701
+        if self.checkfn(self):
+            self.set_converged()
+        else:
+            self.unset_status()
 
-    def set_low(self, val: _Tensor):
+    def set_low(self, val: float):
         """Set the lower bound of the braket and calculate the loss and derivative.
         """
-        results: _Tuple[_Tensor, _Tensor] = self.phi(val)
+        results: _Tuple[float, float] = self.phi(val)
         self._locked = False
         self.counter += 1
-        self.braket[0].copy_(val.clone())
-        self.phis[0].copy_(results[0])
-        self.dphis[0].copy_(results[1])
+        self.braket[0] = val
+        self.phis[0] = results[0]
+        self.dphis[0] = results[1]
         self._locked = True
 
-    def set_high(self, val: _Tensor):
+    def set_high(self, val: float):
         """Set the upper bound of the braket and calculate the loss and derivative.
         """
-        results: _Tuple[_Tensor, _Tensor] = self.phi(val)
+        results: _Tuple[float, float] = self.phi(val)
         self._locked = False
         self.counter += 1
-        self.braket[1].copy_(val.clone())
-        self.phis[1].copy_(results[0])
-        self.dphis[1].copy_(results[1])
+        self.braket[1] = val
+        self.phis[1] = results[0]
+        self.dphis[1] = results[1]
         self._locked = True
 
     def set_message(self, val: str):
@@ -272,16 +251,16 @@ class LineSearchResults:
             raise ValueError(f"Unrecognized bound: {bound}")
 
         self._locked = False
-        self.braket[idx].copy_(self.alpha.clone())
-        self.phis[idx].copy_(self.phik.clone())
-        self.dphis[idx].copy_(self.dphik.clone())
+        self.braket[idx] = self.alpha
+        self.phis[idx] = self.phik
+        self.dphis[idx] = self.dphik
         self._locked = True
 
     def validate(self, phi: ObjectiveFn1D):
         """Validate attributes.
         """
 
-        temp1, temp2 = phi(_torchzeros((), dtype=self.alpha.dtype, device=self.alpha.device))
+        temp1, temp2 = phi(0.0)
         assert self.phi0 == temp1, f"self.phi0 != phi(0): {self.phi0}, {temp1}"
         assert self.dphi0 == temp2, f"self.dphi0 != dphi(0): {self.dphi0}, {temp2}"
 
@@ -342,22 +321,22 @@ class HZLineSearchConf:
         self._locked: bool = False
 
         # torch.jit needs this native attribute declared first
-        self.__dict__: _Dict[str, _Union[int, bool, _Tensor]] = {}
+        self.__dict__: _Dict[str, _Union[int, bool, float]] = {}
 
         # parameters
-        self.delta: _Tensor = _torchtensor(0.1)
-        self.sigma: _Tensor = _torchtensor(0.9)
-        self.epsilon: _Tensor = _torchtensor(1e-6)
-        self.omega: _Tensor = _torchtensor(1e-3)
-        self.nabla: _Tensor = _torchtensor(0.7)
-        self.theta: _Tensor = _torchtensor(0.5)
-        self.gamma: _Tensor = _torchtensor(0.5)
-        self.eta: _Tensor = _torchtensor(0.01)
-        self.rho: _Tensor = _torchtensor(5.0)
-        self.psi0: _Tensor = _torchtensor(0.01)
-        self.psi1: _Tensor = _torchtensor(0.1)
-        self.psi2: _Tensor = _torchtensor(2.0)
-        self.tol: _Tensor = _torchtensor(1e-7)
+        self.delta: float = 0.1
+        self.sigma: float = 0.9
+        self.epsilon: float = 1e-6
+        self.omega: float = 1e-3
+        self.nabla: float = 0.7
+        self.theta: float = 0.5
+        self.gamma: float = 0.5
+        self.eta: float = 0.01
+        self.rho: float = 5.0
+        self.psi0: float = 0.01
+        self.psi1: float = 0.1
+        self.psi2: float = 2.0
+        self.tol: float = 1e-7
 
         # control loops
         self.max_evals: int = 100
@@ -365,19 +344,19 @@ class HZLineSearchConf:
         # lock the writing access
         self._locked = True
 
-    def __setattr__(self, key: str, val: _Union[_Tensor, bool, int]):
+    def __setattr__(self, key: str, val: _Union[bool, int, float]):
         """Not allowing changing values through attributes when locked.
         """
         if key != "_locked" and self._locked:
             raise RuntimeError("Remove lock first by setting locked = False")
         self.__dict__[key] = val
 
-    def set(self, key: str, val: _Union[_Tensor, bool, int]):
+    def set(self, key: str, val: _Union[float, bool, int]):
         """Explicitly requiring users to set values using this function.
         """
         self.__dict__[key] = val
 
-    def update(self, iterable: _Dict[str, _Union[_Tensor, bool, int]]):
+    def update(self, iterable: _Dict[str, _Union[float, bool, int]]):
         """Dictionary-alike updating.
         """
         for key, val in iterable.items():
@@ -386,6 +365,9 @@ class HZLineSearchConf:
     def stop_check(self, data: LineSearchResults):
         """A combination of the standard and approximation Wolfe conditions used by Hager and Zhang.
         """
+        if data.alpha <= 0.0:
+            return False
+
         cond1 = standard_wolfe(data.alpha, data.phik, data.dphik, data.phi0, data.dphi0, self.delta, self.sigma)
         cond2 = approximate_wolfe(data.phik, data.dphik, data.phi0, data.dphi0, data.epsk0, self.delta, self.sigma)
         return (cond1 or cond2)
@@ -402,30 +384,9 @@ class HZLineSearchConf:
         assert 0 < self.gamma < 1
         assert 0 < self.eta
         assert 1 < self.rho
-        assert 0 < self.eta0 < 1
-        assert 0 < self.eta1 < 1
-        assert 1 < self.eta2
-
-    def to(self, val: _Union[_torchdtype, _torchdevice]):
-        """Triger the `to` members of each held tensors.
-        """
-        new = self.__class__(self)
-        new._locked = False
-        new.delta = self.delta.clone().to(val)
-        new.sigma = self.sigma.clone().to(val)
-        new.epsilon = self.epsilon.clone().to(val)
-        new.omega = self.omega.clone().to(val)
-        new.nabla = self.nabla.clone().to(val)
-        new.theta = self.theta.clone().to(val)
-        new.gamma = self.gamma.clone().to(val)
-        new.eta = self.eta.clone().to(val)
-        new.rho = self.rho.clone().to(val)
-        new.psi0 = self.psi0.clone().to(val)
-        new.psi1 = self.psi1.clone().to(val)
-        new.psi2 = self.psi2.clone().to(val)
-        new.tol = self.tol.clone().to(val)
-        new._locked = True
-        return new
+        assert 0 < self.psi0 < 1
+        assert 0 < self.psi1 < 1
+        assert 1 < self.psi2
 
 
 # @torchjit.script  # totally a waste of time; very limited
@@ -441,7 +402,7 @@ def single_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
     """
 
     # situation 1: if target not in the current braket
-    if data.alpha < data.braket.min() or data.alpha > data.braket.max():
+    if data.alpha < min(data.braket) or data.alpha > max(data.braket):
         return data
 
     # situation 2: phi'(alpha) >= 0, replacing high
@@ -461,8 +422,7 @@ def single_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
     while data.counter < config.max_evals:
 
         # low, high, and alpha are almost the same, but alpha violates the stopping condition
-        if (data.braket[1] - data.braket[0]).abs() < config.tol:
-            assert data.converged, "low ~ high ~ alpha, but alpha violates the stopping condition"
+        if abs(data.braket[1] - data.braket[0]) < config.tol:
             return data
 
         # interpolate to a new alpha, calculate phi & dphi, and check if it satiefying confitions
@@ -481,7 +441,16 @@ def single_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
         else:
             data.swap("high")
     else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-        raise RuntimeError("Exceeding maximum allowed function evaluation limit")
+        if data.braket[0] == 0.0:  # comparing exact zero
+            if data.braket[1] != 0.0:
+                data.set_alpha(sum(data.braket)/2.)
+            else:
+                data.set_alpha(0.5)
+        else:
+            data.set_alpha(data.braket[0])
+        data.set_diverged()
+        _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
+        return data
 
     return data
 
@@ -495,8 +464,8 @@ def secant_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
     data.set_alpha(secant_step(*data.braket, *data.dphis))
 
     # get a copy of the current data
-    oldlow, oldhigh = data.braket.clone()
-    olddphilow, olddphihigh = data.dphis.clone()
+    oldlow, oldhigh = data.braket
+    olddphilow, olddphihigh = data.dphis
     data = single_braketing(data, config)
 
     if data.message == "U1":  # alpha = high bound
@@ -511,9 +480,9 @@ def secant_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineS
 
 # @torchjit.script  # totally a waste of time; very limited
 def initial_alpha(
-    phi: ObjectiveFn1D, step: int, aprev: _Tensor, params0: _Tensor, grads0: _Tensor,
-    phi0: _Tensor, dphi0: _Tensor, config: HZLineSearchConf
-):
+    phi: ObjectiveFn1D, step: int, aprev: float, params0: _Tensor,
+    grads0: _Tensor, phi0: float, dphi0: float, config: HZLineSearchConf
+) -> float:
     """Generate an initial guess of target alpha based on the current iteration number.
 
     Notes
@@ -522,23 +491,33 @@ def initial_alpha(
     """
 
     if step == 0:
-        if (params0 != 0).all():
-            return config.psi0 * params0.abs().max() / grads0.abs().max()
+        raise ValueError("The first iteration should be step 1. Got step 0 instead.")
 
-        if (phi0 != 0).all():
-            return config.psi0 * phi0.abs() / (grads0**2).sum().sqrt()
+    if step == 1:  # the step counter should start from 1; anyway, this `if` means the first iteration
+        if isinstance(params0, list):
+            norm = 0.0
+            for p in params0:
+                norm = max(norm, float(p.abs().max()))
+        else:  # must be a torch.Tensor
+            norm = float(params0.abs().max())
 
-        return _torchones((), dtype=params0.dtype, device=params0.device)
+        if norm != 0.0:  # comparing to exact zero
+            return config.psi0 * norm / float(grads0.abs().max())
+
+        if phi0 != 0.0:  # comparing to exact zero
+            return config.psi0 * abs(phi0) / float((grads0**2).sum().sqrt())
+
+        return 1.0
 
     # quadratic interpolant: q(alpha) = (C0 / aprev**2) * alpha**2 + C1 * alpha + C2
     # its derivative: 2 * (C0 / aprev**2) * alpha + C1 -> critical pt: - C1 * aprev**2 / (2 * C0)
-    aprev = aprev * config.psi1
-    phia: _Tensor = phi(aprev)[0]
-    c0 = (phia - phi0 - aprev * dphi0)
-    if c0 > 0:  # convex
-        return - dphi0 * aprev**2 / (2. * c0)
+    psiaprev = aprev * config.psi1
+    phia: float = phi(psiaprev)[0]
+    c0 = (phia - phi0 - psiaprev * dphi0)
+    if c0 > config.tol**0.5:  # strong (?) convex
+        return - dphi0 * psiaprev**2 / (2. * c0)
 
-    # if neither step 0 nor convex quadratic approximation
+    # if neither step 0 nor strongly convex quadratic approximation
     return config.psi2 * aprev
 
 
@@ -546,7 +525,7 @@ def initial_alpha(
 def initial_braketing(data: LineSearchResults, config: HZLineSearchConf) -> LineSearchResults:
     """Get an initial interval that meet opsite slope condition.
     """
-    candidates = [_torchzeros((), dtype=data.alpha.dtype, device=data.alpha.device)]
+    candidates = [0.0]
 
     while data.counter < config.max_evals:
 
@@ -558,13 +537,12 @@ def initial_braketing(data: LineSearchResults, config: HZLineSearchConf) -> Line
 
         # if phi'(cj) < 0 and phi(cj) > epsk0
         if data.phik > data.epsk0:
-            data.set_low(_torchzeros((), dtype=data.alpha.dtype, device=data.alpha.device))
+            data.set_low(0.0)
             data.swap("high")
             while data.counter < config.max_evals:
 
                 # low, high, and alpha are almost the same, but alpha violates the stopping condition
-                if (data.braket[1] - data.braket[0]).abs() < config.tol:
-                    assert data.converged, "low ~ high ~ alpha, but alpha violates the stopping condition"
+                if abs(data.braket[1] - data.braket[0]) < config.tol:
                     return data
 
                 data.set_alpha((1-config.theta)*data.braket[0]+config.theta*data.braket[1])
@@ -581,24 +559,36 @@ def initial_braketing(data: LineSearchResults, config: HZLineSearchConf) -> Line
                 else:
                     data.swap("high")
             else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-                raise RuntimeError("Exceeding maximum allowed function evaluation limit")
+                if data.braket[0] == 0.0:  # comparing exact zero
+                    if data.braket[1] != 0.0:
+                        data.set_alpha(sum(data.braket)/2.)
+                    else:
+                        data.set_alpha(0.5)
+                else:
+                    data.set_alpha(data.braket[0])
+                data.set_diverged()
+                _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
+                return data
 
         # if phi'(cj) < 0 and phi(cj) <= epsk0
-        candidates.append(data.alpha.clone())
+        candidates.append(data.alpha)
         data.set_alpha(config.rho*data.alpha)  # hence rho must > 1
     else:  # if running into this block, we didn't find a good [a, b] within max_iters iterations
-        raise RuntimeError(f"Exceeding max_evals: {data}")
+        data.set_alpha(0.5)
+        data.set_diverged()
+        _warn(f"Exceeding function evaluation allowance. Use alhpa={data.alpha}.", RuntimeWarning)
+        return data
 
 
 # @torchjit.script  # totally a waste of time; very limited
 def linesearch(
-    phi: ObjectiveFn1D, params0: _Tensor, grads0: _Tensor, aprev: _Tensor, step: int,
-    epsk: _Tensor, config: HZLineSearchConf,
+    phi: ObjectiveFn1D, params0: _Union[_Tensor, _List[_Tensor]], grads0: _Tensor, aprev: float, step: int, epsk: float,
+    config: HZLineSearchConf,
 ) -> _Tensor:
     """Hager and Zhang's line searching algorithm.
     """
 
-    data = LineSearchResults(phi, config.stop_check, epsk).to(params0.dtype).to(params0.device)
+    data = LineSearchResults(phi, config.stop_check, epsk)
 
     # get an initial guess of target
     data.set_alpha(initial_alpha(phi, step, aprev, params0, grads0, data.phi0, data.dphi0, config))
@@ -606,87 +596,41 @@ def linesearch(
     # get an initial interval
     data = initial_braketing(data, config)
 
+    if data.diverged:  # the initial scan did not find a proper range, so we just use whatever alpha we have now
+        return data.alpha
+
     # for debugging purpose
     data.validate(phi)
 
     while data.counter < config.max_evals:
 
         # update interval with secnat algorithm
-        oldlow, oldhigh = data.braket.clone()
+        oldlow, oldhigh = data.braket
         data = secant_braketing(data, config)
 
-        if data.converged:
+        if data.converged or data.diverged:  # returen when either find a proper alpha or no way to find a proper alpha
             return data.alpha
 
         # bisection
         if data.braket[1] - data.braket[0] > config.gamma * (oldhigh - oldlow):
-            data.set_alpha(data.braket.sum()/2.)
+            data.set_alpha(sum(data.braket)/2.)
             data = single_braketing(data, config)
 
-            if data.converged:
-                return data.alpha
+        if data.converged or data.diverged:  # returen when either find a proper alpha or no way to find a proper alpha
+            return data.alpha
 
         # probably we found an exact local minimum
-        if (data.braket[1] - data.braket[0]).abs() < config.tol:
-            break
+        if abs(data.braket[1] - data.braket[0]) < config.tol:
+            return data.alpha
     else:
-        assert data.converged, f"Exceeding max_evals: {data}"
+        if data.braket[0] == 0.0:  # comparing exact zero
+            if data.braket[1] != 0.0:  # comparing exact zero
+                alpha = sum(data.braket) / 2.
+            else:
+                alpha = 0.5
+        else:
+            alpha = data.braket[0]
+        _warn(f"Exceeding function evaluation allowance. Use alhpa={alpha}.", RuntimeWarning)
+        return alpha
 
     return data.alpha
-
-
-if __name__ == "__main__":  # doing some tests if run this module as a program
-    import torch
-
-    @torch.jit.script
-    def test_loss_func(x: torch.Tensor) -> _Tuple[torch.Tensor, torch.Tensor]:
-        """A test 1D loss-grad function.
-
-        This function has two minima in the direction of positive x.
-        The first is around x=0.4584 and the second around 2.6547.
-        """
-        val = 0.988 * x**5 - 4.96 * x**4 + 4.978 * x**3 + 5.015 * x**2 - 6.043 * x - 1
-        dval = 4.94 * x**4 - 19.84 * x**3 + 14.934 * x**2 + 10.03 * x - 6.043
-        return val, dval
-
-    config = HZLineSearchConf()
-    config.set("max_evals", 30)
-
-    results = linesearch(
-        test_loss_func,
-        torch.tensor(0, dtype=torch.float32, device="cpu"),
-        torch.tensor(-0.6, dtype=torch.float32, device="cpu"),
-        torch.zeros((), dtype=torch.float32, device="cpu"),
-        0,
-        config.tol,
-        config
-    )
-    print(results)
-
-    @torch.jit.script
-    def rosenbrock(x: torch.Tensor):
-        """The Rosenbrock function in two dimensions with a=1, b=100.
-
-        When x = [-3, -4] + alpha * [0.5, 1.0], there are three alpha values that give the local minumums along
-        direction [0.5, 1.0], that is alpha = 4.53878634002464, alpha = 8, or alpha = 11.4612136599754.
-        """
-        val = (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
-
-        dval = torch.zeros((2,))
-        dval[0] = 2 * (x[0] - 1) + 400 * x[0] * (x[0]**2 - x[1])
-        dval[1] = 200 * (x[1] - x[0]**2)
-        return val, dval
-
-    x0 = torch.tensor((-3.0, -4.0))
-    searchdir = torch.tensor((0.5, 1.0))
-
-    @torch.jit.script
-    def projected(alpha: torch.Tensor, x0=x0, searchdir=searchdir):
-        """loss function being projected to one dimension.
-        """
-        val, grads = rosenbrock(x0 + alpha * searchdir)
-        dval = grads.dot(searchdir)
-        return val, dval
-
-    results = linesearch(projected, x0, rosenbrock(x0)[1], torch.zeros(()), 0, config.tol, config)
-    print(results)
