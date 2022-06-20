@@ -21,14 +21,17 @@ from typing import Optional as _Optional
 from termcolor import colored as _colored
 from hydra.core.config_store import ConfigStore as _ConfigStore
 from modulus.hydra.optimizer import OptimizerConf as _OptimizerConf
+from modulus.hydra.optimizer import AdamConf as _AdamConf
 from modulus.hydra.utils import instantiate_agg as _instantiate_agg
-from modulus.hydra.utils import instantiate_optim as _instantiate_optim
+from modulus.hydra.utils import instantiate_sched as _instantiate_sched
 from modulus.hydra.utils import add_hydra_run_path as _add_hydra_run_path
+from modulus.hydra.training import DefaultTraining as _DefaultTraining
 from modulus.continuous.domain.domain import Domain as _Domain
 from modulus.distributed.manager import DistributedManager as _DistributedManager
 from omegaconf import DictConfig as _DictConfig
 from omegaconf import OmegaConf as _OmegaConf
-from torch.optim import LBFGS as _LBFGS
+from torch.optim import Adam as _Adam
+from .optimizers import NonlinearCG as _NonlinearCG
 
 
 class TimerCuda:
@@ -110,8 +113,8 @@ class SolverBase:
         self.saveable_models = self.domain.get_saveable_models()
         self.global_optimizer_model = self.domain.create_global_optimizer_model()
 
-        # initialize optimizer
-        self.optimizer = _instantiate_optim(self.cfg, self.global_optimizer_model)
+        # initialize optimizer and scheduler assuming current step is zero
+        self._create_optimizers(0)
 
         # initialize aggregator from hydra
         self.aggregator = _instantiate_agg(cfg, self.global_optimizer_model.parameters(), self.domain.get_num_losses())
@@ -182,9 +185,11 @@ class SolverBase:
         if filename.is_file():
             try:
                 checkpoint = _torch.load(filename, map_location=self.device)
-                self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-                self.aggregator.load_state_dict(checkpoint["aggregator_state_dict"])
                 self.initial_step = checkpoint["step"]
+                self._create_optimizers(self.initial_step)
+                self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+                self.aggregator.load_state_dict(checkpoint["aggregator_state_dict"])
                 self.log.info(f"{_colored('Success loading optimizer:', 'green')} {filename}")
             except Exception:
                 self.initial_step = 0
@@ -228,6 +233,7 @@ class SolverBase:
                 {
                     "step": self.step,
                     "optimizer_state_dict": self.optimizer.state_dict(),
+                    "scheduler_state_dict": self.scheduler.state_dict(),
                     "aggregator_state_dict": self.aggregator.state_dict(),
                 },
                 self.network_dir+"/optim_checkpoint.pth",
@@ -243,7 +249,7 @@ class SolverBase:
         """Training loop wrapper.
         """
 
-        # load network, which will also set self.initial_step
+        # load network, which will also set self.initial_step and self.optimizer
         self.load_network()
 
         # solver implementation
@@ -251,6 +257,11 @@ class SolverBase:
 
     def _solve(self):
         """Actual training loop.
+        """
+        raise NotImplementedError
+
+    def _create_optimizers(self, step: int = 0):
+        """Create optimizers based on (usually) the current step.
         """
         raise NotImplementedError
 
@@ -311,23 +322,15 @@ class SolverBase:
             _torch.distributed.reduce(elapsed_time, 0, op=_torch.distributed.ReduceOp.SUM)
             elapsed_time = elapsed_time.cpu().numpy() / self.manager.world_size
 
-        try:
-            _last_lr = [group.get('lr', float("NaN")) for group in self.optimizer.param_groups][0]
-        except AttributeError as err:
-            if "'NoneType' object has no attribute" in str(err):
-                _last_lr = float("NaN")
-            else:
-                raise
-
         if self.manager.rank == 0:
-            self.log.info(msg.format(self.step, loss, _last_lr, elapsed_time))
+            self.log.info(msg.format(self.step, loss, self.scheduler.get_last_lr()[0], elapsed_time))
 
         # reset timer
         timer.reset()
 
 
-class NonAdamSolver(SolverBase):
-    """Using L-BFGS + SWA.
+class AdamCGSWA(SolverBase):
+    """Using Adam - CG - SWA combination.
 
     Notes
     -----
@@ -336,26 +339,65 @@ class NonAdamSolver(SolverBase):
     3. No tensorboard support.
     4. No minibatch.
     """
-    # nullify the property from the parent class
-    max_steps = None
+
+    # other properties
+    adam_max_iters = property(lambda self: self.cfg.training.adam.max_steps)
+    cg_max_iters = property(lambda self: self.cfg.training.cg.max_steps)
+    swa_max_iters = property(lambda self: self.cfg.training.swa.max_steps)
+    adamconf = property(lambda self: self.cfg.optimizer.adam)
+    cgconf = property(lambda self: self.cfg.optimizer.cg)
+    swaconf = property(lambda self: self.cfg.optimizer.swa)
 
     def __init__(self, cfg: _DictConfig, domain: _Domain):
         super().__init__(cfg, domain)
-        assert cfg.optimizer._target_ in ["torch.optim.LBFGS", "helpers.optimizers.NonlinearCG"], \
-            "This solver can only be used with L-BFGS or Nonlinear-CG optimizer"
 
         self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
-        self.swa_start = cfg.batch_size.nbatches
+        self.swa_start = self.adam_max_iters + self.cg_max_iters
 
-        # only train for 2 epochs; the 1st epoch using L-BFGS, the second using L-BFGS + SWA
-        self.max_steps = 2 * self.cfg.batch_size.nbatches
-
-        if self.cfg.training.max_steps != self.max_steps:
+        if self.max_steps != (self.adam_max_iters + self.cg_max_iters + self.swa_max_iters):
             self.log.warn(_colored(
-                f"max iter is set to {self.cfg.training.max_steps}, "
-                f"but we will train only up to {self.max_steps}",
+                f"max_steps (= {self.max_steps}) will not be used in Adam-CG-SWA training."
                 "red"
             ))
+
+            # max_steps is a read-only reference to self.cfg.training.max_steps
+            self.cfg.training.max_steps = self.adam_max_iters + self.cg_max_iters + self.swa_max_iters
+
+        # initialize with an Adam optimizer, but may be overwritten in load_network (by calling _create_optimizer)
+        self.optimizer = _Adam(
+            self.global_optimizer_model.parameters(), lr=self.adamconf.lr, betas=self.adamconf.betas,
+            eps=self.adamconf.eps, weight_decay=self.adamconf.weight_decay, amsgrad=self.adamconf.amsgrad
+        )
+
+        # currently self.optimizer is Adam, will be rebound to new optimizer later
+        self.scheduler = _instantiate_sched(self.cfg, self.optimizer)
+
+    def _create_optimizers(self, step: int = 0):
+
+        def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
+            msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
+            self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
+
+        if step <= self.adam_max_iters:
+            self.optimizer = _Adam(
+                self.global_optimizer_model.parameters(), lr=self.adamconf.lr, betas=self.adamconf.betas,
+                eps=self.adamconf.eps, weight_decay=self.adamconf.weight_decay, amsgrad=self.adamconf.amsgrad
+            )
+        elif step <= self.swa_start:  # cg
+            self.optimizer = _NonlinearCG(
+                self.global_optimizer_model.parameters(), max_iters=self.cgconf.max_iters,
+                gtol=self.cgconf.gtol, ftol=self.cgconf.ftol, error=self.cgconf.error,
+                callback=_callback_impl if self.cgconf.debug else None
+            )
+        else:  # swa stage
+            self.optimizer = _NonlinearCG(
+                self.global_optimizer_model.parameters(), max_iters=self.swaconf.max_iters,
+                gtol=self.swaconf.gtol, ftol=self.swaconf.ftol, error=self.swaconf.error,
+                callback=_callback_impl if self.swaconf.debug else None
+            )
+
+        # scheduler has to be rebound to the optimizer
+        self.scheduler = _instantiate_sched(self.cfg, self.optimizer)
 
     def objective_function(self):
         """Given a set of parameters, compute the loss and gradients wrt. parameters.
@@ -381,52 +423,131 @@ class NonAdamSolver(SolverBase):
     def _solve(self):
         """Actual training loop.
         """
-        # initialize timer
-        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
-        # save the initial states
+        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
         self.step = self.initial_step
         loss = self.objective_function()
         self._logging_info(loss)
         self.save_checkpoint()
         self._print_stdout_info(loss, timer)
 
-        def callback(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
-            print("\t", _step, _loss, _gknorm, _alpha, _beta)
+        # stage 1: Adam solver
+        self._adam_solve()
+
+        # stage 2: train with nonlinear cg
+        self._cg_solve()
+
+        # stage 3: train with nonlinear cg but averaged with SWA
+        self._swa_solve()
+
+    def _adam_solve(self):
+        """Stage 1: solve with Adam.
+        """
+
+        if self.initial_step >= self.adam_max_iters:  # already finished with Adam
+            return
+
+        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+
+        # update current I/O frequencies
+        self._update_training_cfg("adam")
 
         # self.step means how many times the model is trained at the end of each iteration, so starts from 1
-        for self.step in range(self.initial_step+1, self.max_steps+1):
+        for self.step in range(self.initial_step+1, self.adam_max_iters+1):
+            self.optimizer.zero_grad()
+            loss = 0.0
+            losses = self.domain.compute_losses(self.step)
+            loss = self.aggregator(losses, self.step)
+            loss.backward()
+            self.optimizer.step()
+            self.scheduler.step()
 
-            # use a new L-BFGS solver every time to discard states silently stored in the optimizer
-            lbfgsoptimizer = _LBFGS(
-                self.global_optimizer_model.parameters(), lr=1, max_iter=1000, tolerance_grad=1e-7,
-                tolerance_change=1e-7, history_size=50, line_search_fn="strong_wolfe"
-            )
-
-            # train against the current data batch with L-BFGS
-            loss = lbfgsoptimizer.step(self.objective_function)
-
-            # # use a new L-BFGS solver every time to discard states silently stored in the optimizer
-            # self.optimizer = _instantiate_optim(self.cfg, self.global_optimizer_model)
-            # self.optimizer.callback = callback
-
-            # # train against the current data batch with CG
-            # loss = self.optimizer.step(self.objective_function)
-
-            # SWA moving average
-            if self.step >= self.swa_start:
-                self.swa_model.update_parameters(self.global_optimizer_model)
+            self.loss = float(loss.detach().cpu())
 
             # save and print states
             self._logging_info(loss)
             self.save_checkpoint()
             self._print_stdout_info(loss, timer)
             self._write_to_tensorboard()
+        else:
+            self.initial_step = self.step
 
-        # training complete
+    def _cg_solve(self):
+        """Solve with CG.
+        """
+
+        if self.initial_step >= self.swa_start:  # already finished with CG
+            return
+
+        # creeate cg solver and a dummy scheduler
+        self._create_optimizers(self.initial_step+1)  # the solver is for the upcoming step so "+1"
+
+        # update current I/O frequencies
+        self._update_training_cfg("cg")
+
+        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+
+        for self.step in range(self.initial_step+1, self.swa_start+1):
+
+            # train; the CG solver resets itself every time we call `step`, so we can reuse the same optimizer
+            loss = self.optimizer.step(self.objective_function)
+
+            # save and print states
+            self._logging_info(loss)
+            self.save_checkpoint()
+            self._print_stdout_info(loss, timer)
+            self._write_to_tensorboard()
+        else:
+            self.initial_step = self.step
+
+    def _swa_solve(self):
+        """Solve with CG.
+        """
+
+        # creeate cg solver and a dummy scheduler
+        self._create_optimizers(self.initial_step+1)  # the solver is for the upcoming step so "+1"
+
+        # update current I/O frequencies
+        self._update_training_cfg("swa")
+
+        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+
+        for self.step in range(self.initial_step+1, self.max_steps+1):
+
+            # train; the CG solver resets itself every time we call `step`, so we can reuse the same optimizer
+            loss = self.optimizer.step(self.objective_function)
+
+            # SWA update
+            self.swa_model.update_parameters(self.global_optimizer_model)
+
+            # save and print states
+            self._logging_info(loss)
+            self.save_checkpoint()
+            self._print_stdout_info(loss, timer)
+            self._write_to_tensorboard()
         else:
             if self.manager.rank == 0:
                 self.log.info(f"[step: {self.step:10d}] finished training!")
+
+    def _update_training_cfg(self, key: str):
+        """Update the main I/O frquencies.
+        """
+
+        if key in ["adam", "cg", "swa"]:
+            target = self.cfg.training[key]
+        else:
+            raise ValueError(f"Unrecognized key: {key}")
+
+        # only updates I/O related parameters
+        self.cfg.training.grad_agg_freq = target.grad_agg_freq
+        self.cfg.training.rec_results_freq = target.rec_results_freq
+        self.cfg.training.rec_validation_freq = target.rec_validation_freq
+        self.cfg.training.rec_inference_freq = target.rec_inference_freq
+        self.cfg.training.rec_monitor_freq = target.rec_monitor_freq
+        self.cfg.training.rec_constraint_freq = target.rec_constraint_freq
+        self.cfg.training.save_network_freq = target.save_network_freq
+        self.cfg.training.print_stats_freq = target.print_stats_freq
+        self.cfg.training.summary_freq = target.summary_freq
 
     def load_network(self):
         """Load network.
@@ -566,6 +687,25 @@ class NonlinearCGConf(_OptimizerConf):
     gtol: float = 1e-7
     ftol: float = 1e-7
     error: bool = False
+    debug: bool = False
+
+
+@dataclass
+class AdamCGSWAConf(_OptimizerConf):
+    """Mixed optimization strategy.
+    """
+    adam: _OptimizerConf = _AdamConf
+    cg: NonlinearCGConf = NonlinearCGConf()
+    swa: NonlinearCGConf = NonlinearCGConf()
+
+
+@dataclass
+class AdamCGSWATrainingConf(_DefaultTraining):
+    """Training control for Adam-CG-Conf stragety.
+    """
+    adam: _DefaultTraining = _DefaultTraining()
+    cg: _DefaultTraining = _DefaultTraining()
+    swa: _DefaultTraining = _DefaultTraining()
 
 
 def register_optimizer_configs() -> None:
@@ -578,6 +718,18 @@ def register_optimizer_configs() -> None:
     )
     _ConfigStore.instance().store(
         group="optimizer",
-        name="nonlinear_cg",
+        name="nonlinear-cg",
         node=NonlinearCGConf,
+    )
+    _ConfigStore.instance().store(
+        group="optimizer",
+        name="adam-cg-swa",
+        node=AdamCGSWAConf,
+    )
+
+    # note this is registered to training!
+    _ConfigStore.instance().store(
+        group="training",
+        name="adam-cg-swa",
+        node=AdamCGSWATrainingConf,
     )

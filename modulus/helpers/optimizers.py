@@ -151,7 +151,7 @@ class NonlinearCG(_Optimizer):
 
     def __init__(self, params, max_iters=1000, gtol=1e-6, ftol=1e-6, error=False, callback=None, **kwargs):
 
-        defaults = dict(max_iters=max_iters, gtol=gtol, ftol=ftol, error=error, lnskwargs=kwargs)
+        defaults = dict(lr=1.0, max_iters=max_iters, gtol=gtol, ftol=ftol, error=error, lnskwargs=kwargs)
         super().__init__(params, defaults)
         assert len(self.param_groups) == 1, "NonlinearCG doesn't support per-parameter options (parameter groups)"
 
