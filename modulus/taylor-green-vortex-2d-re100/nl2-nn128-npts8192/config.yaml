@@ -30,19 +30,12 @@ optimizer:
     weight_decay: 0.0
     amsgrad: False
 
-  cg:
+  swa:
     max_iters: 50000
     gtol: 1.0e-6
     ftol: 1.0e-6
     error: False
     debug: True
-
-  swa:
-    max_iters: 100
-    gtol: 1.0e-6
-    ftol: 1.0e-6
-    error: False
-    debug: False
 
 loss:
   alpha: 0.1
@@ -52,25 +45,17 @@ training:
     max_steps : 100000
     rec_results_freq : 1000
     rec_inference_freq: 10000
-    save_network_freq: 100
-    print_stats_freq: 100
     summary_freq: 100
 
   cg:
-    max_steps : 2
-    rec_results_freq : 1
-    rec_inference_freq: 1
-    save_network_freq: 1
-    print_stats_freq: 1
-    summary_freq: 1
+    max_steps : 0
 
   swa:
     max_steps : 200
-    rec_results_freq : 10
-    rec_inference_freq: 10
-    save_network_freq: 10
+    rec_results_freq : 1
+    save_network_freq: 1
     print_stats_freq: 1
-    summary_freq: 5
+    summary_freq: 1
 
 batch_size:
   nbatches: 1000
