@@ -356,7 +356,7 @@ class AdamCGSWA(SolverBase):
 
         if self.max_steps != (self.adam_max_iters + self.cg_max_iters + self.swa_max_iters):
             self.log.warn(_colored(
-                f"max_steps (= {self.max_steps}) will not be used in Adam-CG-SWA training."
+                f"max_steps (= {self.max_steps}) will not be used in Adam-CG-SWA training.",
                 "red"
             ))
 
