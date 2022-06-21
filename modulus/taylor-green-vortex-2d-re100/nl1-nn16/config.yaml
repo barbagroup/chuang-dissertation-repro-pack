@@ -31,7 +31,7 @@ optimizer:
     amsgrad: False
 
   cg:
-    max_iters: 5000
+    max_iters: 50000
     gtol: 1.0e-6
     ftol: 1.0e-6
     error: False
@@ -49,7 +49,7 @@ loss:
 
 training:
   adam:
-    max_steps : 50000
+    max_steps : 100000
     rec_results_freq : 1000
     rec_inference_freq: 10000
     save_network_freq: 100
@@ -57,12 +57,12 @@ training:
     summary_freq: 100
 
   cg:
-    max_steps : 100
-    rec_results_freq : 10
-    rec_inference_freq: 10
-    save_network_freq: 10
+    max_steps : 2
+    rec_results_freq : 1
+    rec_inference_freq: 1
+    save_network_freq: 1
     print_stats_freq: 1
-    summary_freq: 10
+    summary_freq: 1
 
   swa:
     max_steps : 200
@@ -74,7 +74,7 @@ training:
 
 batch_size:
   nbatches: 1000
-  npts: 256
+  npts: 131072
 
 custom:
   x: [-pi, pi]
