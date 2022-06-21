@@ -374,9 +374,12 @@ class AdamCGSWA(SolverBase):
 
     def _create_optimizers(self, step: int = 0):
 
-        def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
-            msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
-            self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
+        def _callback_impl_factory(conf):
+            def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
+                if _step % conf.debug_print_freq == 0 or _step == 0:
+                    msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
+                    self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
+            return _callback_impl
 
         if step <= self.adam_max_iters:
             self.optimizer = _Adam(
@@ -387,13 +390,13 @@ class AdamCGSWA(SolverBase):
             self.optimizer = _NonlinearCG(
                 self.global_optimizer_model.parameters(), max_iters=self.cgconf.max_iters,
                 gtol=self.cgconf.gtol, ftol=self.cgconf.ftol, error=self.cgconf.error,
-                callback=_callback_impl if self.cgconf.debug else None
+                callback=_callback_impl_factory(self.cgconf) if self.cgconf.debug else None
             )
         else:  # swa stage
             self.optimizer = _NonlinearCG(
                 self.global_optimizer_model.parameters(), max_iters=self.swaconf.max_iters,
                 gtol=self.swaconf.gtol, ftol=self.swaconf.ftol, error=self.swaconf.error,
-                callback=_callback_impl if self.swaconf.debug else None
+                callback=_callback_impl_factory(self.swaconf) if self.swaconf.debug else None
             )
 
         # scheduler has to be rebound to the optimizer
@@ -688,6 +691,7 @@ class NonlinearCGConf(_OptimizerConf):
     ftol: float = 1e-7
     error: bool = False
     debug: bool = False
+    debug_print_freq: int = 100
 
 
 @dataclass
