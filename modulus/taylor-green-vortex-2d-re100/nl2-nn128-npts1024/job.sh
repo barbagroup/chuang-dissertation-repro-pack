@@ -1,7 +1,7 @@
 #! /bin/sh
 #
 # job.sh
-# Copyright (C) 2022 Pi-Yueh Chuang <pychuang@pm.me>
+# Copyright (C) 2022 Pi-Yueh Chuang <pychuang@gwu.me>
 #
 # Distributed under terms of the BSD 3-Clause license.
 #
@@ -9,7 +9,7 @@
 #SBATCH --job-name="2D TGV"
 #SBATCH --nodes=1
 #SBATCH --gpus=1
-#SBATCH --cpus-per-gpu 6
+#SBATCH --cpus-per-gpu=6
 #SBATCH --partition=dgx2
 #SBATCH --time=0-04:00:00
 #SBATCH --output=slurm-%A_%a.out
