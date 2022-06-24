@@ -18,6 +18,9 @@ from torch import Tensor as _Tensor
 from torch import jit as torchjit
 
 
+# controlling debugging procedures
+LSDEBUG: bool = False
+
 # type shorhand for 1D objective function
 ObjectiveFn1D = _Callable[[float], _Tuple[float, float]]
 
@@ -187,6 +190,9 @@ class LineSearchResults:
         # tracking how many time the phi function has been called
         self.counter: int = 0
 
+        # setup validation function based on the debug flag
+        self.validate = self._validate if LSDEBUG else self._validate_null
+
         # disable write permision
         self._locked = True
 
@@ -291,7 +297,7 @@ class LineSearchResults:
         self.dphik = self.dphis[idx]
         self._locked = True
 
-    def validate(self, phi: ObjectiveFn1D, tol: float):
+    def _validate(self, phi: ObjectiveFn1D, tol: float):
         """Validate attributes.
         """
 
@@ -314,6 +320,11 @@ class LineSearchResults:
         assert self.dphi0 < 0., f"Initial slope is not negative. Got: {self.dphi0}"
 
         interval_check(self.braket, self.phis, self.dphis, self.epsk0, tol)
+
+    def _validate_null(self, phi: ObjectiveFn1D, tol: float):
+        """Dummy function for doing nothing.
+        """
+        pass
 
 
 # @torchjit.script  # totally a waste of time; very limited
