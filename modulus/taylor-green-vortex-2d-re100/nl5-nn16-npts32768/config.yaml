@@ -1,0 +1,70 @@
+defaults :
+  - modulus_default
+  - arch: [fully_connected,]
+  - scheduler: tf_exponential_lr
+  - optimizer: adam-cg-swa
+  - loss: NSAnnealingLossAggregator
+  - override training: adam-cg-swa
+  - _self_
+
+jit: true
+
+save_filetypes: npz
+
+debug: false
+
+arch:
+  fully_connected:
+    layer_size: 16
+    nr_layers: 5
+
+scheduler:
+  decay_rate: 0.95
+  decay_steps: 5000
+
+optimizer:
+  adam:
+    lr: 1.0e-3
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+    amsgrad: False
+
+  swa:
+    max_iters: 50000
+    gtol: 1.0e-6
+    ftol: 1.0e-6
+    error: False
+    debug: True
+
+loss:
+  alpha: 0.1
+
+training:
+  adam:
+    max_steps : 100000
+    rec_results_freq : 1000
+    rec_inference_freq: 10000
+    summary_freq: 100
+
+  cg:
+    max_steps : 0
+
+  swa:
+    max_steps : 200
+    rec_results_freq : 1
+    save_network_freq: 1
+    print_stats_freq: 1
+    summary_freq: 1
+
+batch_size:
+  nbatches: 1000
+  npts: 32768
+
+custom:
+  x: [-pi, pi]
+  y: [-pi, pi]
+  t: [0., 100.]
+  periodic: ["x", "y"]
+  nu: 0.01
+  rho: 1.0

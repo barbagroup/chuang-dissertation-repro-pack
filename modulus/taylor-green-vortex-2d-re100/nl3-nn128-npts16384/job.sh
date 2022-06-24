@@ -14,7 +14,7 @@
 #SBATCH --exclude dgx1-[000-002,004]
 #SBATCH --time=0-04:00:00
 #SBATCH --output=slurm-%A_%a.out
-#SBATCH --array=1-4%1  # submit this job 4 times but only run 1 at a time
+#SBATCH --array=1-6%1  # submit this job 6 times but only run 1 at a time
 
 
 # get the path to this script (method depending on whether using Slurm)

@@ -26,9 +26,9 @@ def main(force: bool):
     with open(curdir.joinpath("templates", "job.sh.temp"), "r") as fobj:
         job_sh = fobj.read()
 
-    nns = [128]
-    nls = [1, 2, 3]
-    nptss = [2**i for i in range(10, 18)]
+    nns = [16, 32, 64, 128, 256]
+    nls = [1, 2, 3, 4, 5]
+    nptss = [2**i for i in range(10, 17)]
 
     for nl, nn, npts in itertools.product(nls, nns, nptss):
         path = curdir.joinpath(f"nl{nl}-nn{nn}-npts{npts}")
@@ -40,17 +40,13 @@ def main(force: bool):
             with open(path.joinpath("config.yaml"), "w") as fobj:
                 fobj.write(config_yaml.format(nr_layers=nl, layer_size=nn, npts=npts))
 
-        if not path.joinpath("main.py") or force:
+        if not path.joinpath("main.py").is_file() or force:
             with open(path.joinpath("main.py"), "w") as fobj:
                 fobj.write(main_py)
 
-        if not path.joinpath("job.sh") or force:
-            if nl == 3:
-                with open(path.joinpath("job.sh"), "w") as fobj:
-                    fobj.write(job_sh.format(ngpus=1, ncpus=10, partition="batch", njobs=4))
-            else:
-                with open(path.joinpath("job.sh"), "w") as fobj:
-                    fobj.write(job_sh.format(ngpus=1, ncpus=6, partition="dgx2", njobs=2))
+        if not path.joinpath("job.sh").is_file() or force:
+            with open(path.joinpath("job.sh"), "w") as fobj:
+                fobj.write(job_sh.format(ngpus=1, ncpus=10, partition="batch", njobs=6))
 
     return 0
 

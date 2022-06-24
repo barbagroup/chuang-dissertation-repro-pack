@@ -9,12 +9,12 @@
 #SBATCH --job-name="2D TGV"
 #SBATCH --nodes=1
 #SBATCH --gpus=1
-#SBATCH --cpus-per-gpu=6
-#SBATCH --partition=dgx2
+#SBATCH --cpus-per-gpu=10
+#SBATCH --partition=batch
 #SBATCH --exclude dgx1-[000-002,004]
 #SBATCH --time=0-04:00:00
 #SBATCH --output=slurm-%A_%a.out
-#SBATCH --array=1-2%1  # submit this job 2 times but only run 1 at a time
+#SBATCH --array=1-6%1  # submit this job 6 times but only run 1 at a time
 
 
 # get the path to this script (method depending on whether using Slurm)
