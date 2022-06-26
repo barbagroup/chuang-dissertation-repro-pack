@@ -213,12 +213,12 @@ class SolverBase:
         # logging initial step
         self.log.info(f"Training will start from step {self.initial_step}")
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, force=False):
         """Save a checkpoint.
         """
 
         # no need to save checkpoint
-        if self.step % self.save_network_freq != 0:
+        if self.step % self.save_network_freq != 0 and not force:
             return
 
         msg = _colored("[step: {:10d}] saved checkpoint to {}", "green")
@@ -329,8 +329,8 @@ class SolverBase:
         timer.reset()
 
 
-class AdamCGSWA(SolverBase):
-    """Using Adam - CG - SWA combination.
+class AdamNCGSWA(SolverBase):
+    """Using Adam - SWA - Nonlinear CG - SWA combination.
 
     Notes
     -----
@@ -342,26 +342,42 @@ class AdamCGSWA(SolverBase):
 
     # other properties
     adam_max_iters = property(lambda self: self.cfg.training.adam.max_steps)
-    cg_max_iters = property(lambda self: self.cfg.training.cg.max_steps)
-    swa_max_iters = property(lambda self: self.cfg.training.swa.max_steps)
+    adamswa_max_iters = property(lambda self: self.cfg.training.adamswa.max_steps)
+    ncg_max_iters = property(lambda self: self.cfg.training.ncg.max_steps)
+    ncgswa_max_iters = property(lambda self: self.cfg.training.ncgswa.max_steps)
     adamconf = property(lambda self: self.cfg.optimizer.adam)
-    cgconf = property(lambda self: self.cfg.optimizer.cg)
-    swaconf = property(lambda self: self.cfg.optimizer.swa)
+    adamswaconf = property(lambda self: self.cfg.optimizer.adamswa)
+    ncgconf = property(lambda self: self.cfg.optimizer.ncg)
+    ncgswaconf = property(lambda self: self.cfg.optimizer.ncgswa)
 
     def __init__(self, cfg: _DictConfig, domain: _Domain):
+
+        self.cfg = cfg  # needed by properties self.xxxx_max_iters
+
+        # ranages of each stage (they are used in for loops, so the end is one more)
+        self.adam_start = 1  # the first iteration is marked iter 1, rather than iter 0
+        self.adam_end = self.adam_max_iters + 1
+
+        self.adamswa_start = self.adam_end
+        self.adamswa_end = self.adamswa_start + self.adamswa_max_iters
+
+        self.ncg_start = self.adamswa_end
+        self.ncg_end = self.ncg_start + self.ncg_max_iters
+
+        self.ncgswa_start = self.ncg_end
+        self.ncgswa_end = self.ncgswa_start + self.ncgswa_max_iters
+
+        # self.max_steps is a read-only reference to self.cfg.training.max_steps
+        self.cfg.training.max_steps = self.ncgswa_end - 1
+
+        # initialize the parent, which calls _create_optimizer, which needs self.xxxx_end
         super().__init__(cfg, domain)
 
-        self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
-        self.swa_start = self.adam_max_iters + self.cg_max_iters
+        # log the change in max_steps
+        self.log.warn(_colored(f"max_steps is modified to {self.max_steps}.", "red"))
 
-        if self.max_steps != (self.adam_max_iters + self.cg_max_iters + self.swa_max_iters):
-            self.log.warn(_colored(
-                f"max_steps (= {self.max_steps}) will not be used in Adam-CG-SWA training.",
-                "red"
-            ))
-
-            # max_steps is a read-only reference to self.cfg.training.max_steps
-            self.cfg.training.max_steps = self.adam_max_iters + self.cg_max_iters + self.swa_max_iters
+        # initialize swa model holder
+        self.swa_model = None
 
         # initialize with an Adam optimizer, but may be overwritten in load_network (by calling _create_optimizer)
         self.optimizer = _Adam(
@@ -370,36 +386,6 @@ class AdamCGSWA(SolverBase):
         )
 
         # currently self.optimizer is Adam, will be rebound to new optimizer later
-        self.scheduler = _instantiate_sched(self.cfg, self.optimizer)
-
-    def _create_optimizers(self, step: int = 0):
-
-        def _callback_impl_factory(conf):
-            def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
-                if _step % conf.debug_print_freq == 0 or _step == 0:
-                    msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
-                    self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
-            return _callback_impl
-
-        if step <= self.adam_max_iters:
-            self.optimizer = _Adam(
-                self.global_optimizer_model.parameters(), lr=self.adamconf.lr, betas=self.adamconf.betas,
-                eps=self.adamconf.eps, weight_decay=self.adamconf.weight_decay, amsgrad=self.adamconf.amsgrad
-            )
-        elif step <= self.swa_start:  # cg
-            self.optimizer = _NonlinearCG(
-                self.global_optimizer_model.parameters(), max_iters=self.cgconf.max_iters,
-                gtol=self.cgconf.gtol, ftol=self.cgconf.ftol, error=self.cgconf.error,
-                callback=_callback_impl_factory(self.cgconf) if self.cgconf.debug else None
-            )
-        else:  # swa stage
-            self.optimizer = _NonlinearCG(
-                self.global_optimizer_model.parameters(), max_iters=self.swaconf.max_iters,
-                gtol=self.swaconf.gtol, ftol=self.swaconf.ftol, error=self.swaconf.error,
-                callback=_callback_impl_factory(self.swaconf) if self.swaconf.debug else None
-            )
-
-        # scheduler has to be rebound to the optimizer
         self.scheduler = _instantiate_sched(self.cfg, self.optimizer)
 
     def objective_function(self):
@@ -434,21 +420,34 @@ class AdamCGSWA(SolverBase):
         self.save_checkpoint()
         self._print_stdout_info(loss, timer)
 
+        self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
+
         # stage 1: Adam solver
         self._adam_solve()
 
-        # stage 2: train with nonlinear cg
-        self._cg_solve()
+        # stage 2: train with Adam but averate with SWA
+        self._adamswa_solve()
 
-        # stage 3: train with nonlinear cg but averaged with SWA
-        self._swa_solve()
+        # stage 3: train with nonlinear cg
+        self._ncg_solve()
+
+        # stage 4: train with nonlinear cg but averaged with SWA
+        self._ncgswa_solve()
+
+        if self.manager.rank == 0:
+            self.log.info(f"[step: {self.step:10d}] finished training!")
 
     def _adam_solve(self):
         """Stage 1: solve with Adam.
         """
 
-        if self.initial_step >= self.adam_max_iters:  # already finished with Adam
+        if self.initial_step + 1 >= self.adam_end:  # meaning we already done with adam
+            msg = "The next step {} outside Adam range [{}, {}). Skip"
+            self.log.info(_colored(msg.format(self.initial_step+1, self.adam_start, self.adam_end), "blue"))
             return
+
+        if self.swa_model is not None:  # shouldn't happen, but just in case
+            self.swa_model = None
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
@@ -456,7 +455,7 @@ class AdamCGSWA(SolverBase):
         self._update_training_cfg("adam")
 
         # self.step means how many times the model is trained at the end of each iteration, so starts from 1
-        for self.step in range(self.initial_step+1, self.adam_max_iters+1):
+        for self.step in range(self.initial_step+1, self.adam_end):
             self.optimizer.zero_grad()
             loss = 0.0
             losses = self.domain.compute_losses(self.step)
@@ -474,23 +473,80 @@ class AdamCGSWA(SolverBase):
             self._write_to_tensorboard()
         else:
             self.initial_step = self.step
+            self.save_checkpoint(True)  # force writing a checkpoint
 
-    def _cg_solve(self):
-        """Solve with CG.
+    def _adamswa_solve(self):
+        """Stage 2: solve with Adam + SWA.
         """
 
-        if self.initial_step >= self.swa_start:  # already finished with CG
+        if self.initial_step + 1 >= self.adamswa_end:  # meaning we already done with adam + swa
+            msg = "The next step {} outside AdamSWA range [{}, {}). Skip"
+            self.log.info(_colored(msg.format(self.initial_step+1, self.adamswa_start, self.adamswa_end), "blue"))
             return
+
+        if self.initial_step + 1 == self.adamswa_start:  # i.e., not a continue run
+            self.log.info(_colored("Creating a new SWA model for AdamSWA.", "blue"))
+            self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
+
+        timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+
+        # update current I/O frequencies
+        self._update_training_cfg("adamswa")
+
+        # self.step means how many times the model is trained at the end of each iteration, so starts from 1
+        for self.step in range(self.initial_step+1, self.adamswa_end):
+            self.optimizer.zero_grad()
+            loss = 0.0
+            losses = self.domain.compute_losses(self.step)
+            loss = self.aggregator(losses, self.step)
+            loss.backward()
+            self.optimizer.step()
+            self.scheduler.step()
+
+            # SWA update
+            self.swa_model.update_parameters(self.global_optimizer_model)
+
+            self.loss = float(loss.detach().cpu())
+
+            # save and print states
+            self._logging_info(loss)
+            self.save_checkpoint()
+            self._print_stdout_info(loss, timer)
+            self._write_to_tensorboard()
+        else:
+            self.initial_step = self.step
+
+            # copy SWA parameters back to the main model
+            for p_swa, p_model in zip(self.swa_model.module.parameters(), self.global_optimizer_model.parameters()):
+                p_model.detach().copy_(p_swa.detach().clone())
+
+            self.save_checkpoint(True)  # force writing a checkpoint
+
+            # remove swa_model
+            self.log.info(_colored("Deleting AdamSWA's SWA model.", "blue"))
+            self.swa_model = None
+
+    def _ncg_solve(self):
+        """Stage 3: Solve with Nonlinear-CG.
+        """
+
+        if self.initial_step + 1 >= self.ncg_end:  # meaning we already done with nonlinear cg
+            msg = "The next step {} outside NCG range [{}, {}). Skip"
+            self.log.info(_colored(msg.format(self.initial_step+1, self.ncg_start, self.ncg_end), "blue"))
+            return
+
+        if self.swa_model is not None:  # don't need SWA and don't want to output SWA
+            self.swa_model = None
 
         # creeate cg solver and a dummy scheduler
         self._create_optimizers(self.initial_step+1)  # the solver is for the upcoming step so "+1"
 
         # update current I/O frequencies
-        self._update_training_cfg("cg")
+        self._update_training_cfg("ncg")
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
-        for self.step in range(self.initial_step+1, self.swa_start+1):
+        for self.step in range(self.initial_step+1, self.ncg_end):
 
             # train; the CG solver resets itself every time we call `step`, so we can reuse the same optimizer
             loss = self.optimizer.step(self.objective_function)
@@ -502,20 +558,30 @@ class AdamCGSWA(SolverBase):
             self._write_to_tensorboard()
         else:
             self.initial_step = self.step
+            self.save_checkpoint(True)  # force writing a checkpoint
 
-    def _swa_solve(self):
-        """Solve with CG.
+    def _ncgswa_solve(self):
+        """Stage 4: Solve with Nonlinear CG + SWA.
         """
+
+        if self.initial_step + 1 >= self.ncgswa_end:  # meaning we already done with nonlinear cg
+            msg = "The next step {} outside NCGSWA range [{}, {}). Skip"
+            self.log.info(_colored(msg.format(self.initial_step+1, self.ncgswa_start, self.ncgswa_end), "blue"))
+            return
+
+        if self.initial_step + 1 == self.ncgswa_start:  # i.e., not a continue run
+            self.log.info(_colored("Creating a new SWA model for NCGSWA.", "blue"))
+            self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
 
         # creeate cg solver and a dummy scheduler
         self._create_optimizers(self.initial_step+1)  # the solver is for the upcoming step so "+1"
 
         # update current I/O frequencies
-        self._update_training_cfg("swa")
+        self._update_training_cfg("ncgswa")
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
-        for self.step in range(self.initial_step+1, self.max_steps+1):
+        for self.step in range(self.initial_step+1, self.ncgswa_end):
 
             # train; the CG solver resets itself every time we call `step`, so we can reuse the same optimizer
             loss = self.optimizer.step(self.objective_function)
@@ -529,14 +595,44 @@ class AdamCGSWA(SolverBase):
             self._print_stdout_info(loss, timer)
             self._write_to_tensorboard()
         else:
-            if self.manager.rank == 0:
-                self.log.info(f"[step: {self.step:10d}] finished training!")
+            self.initial_step = self.step
+            self.save_checkpoint(True)  # force writing a checkpoint
+
+    def _create_optimizers(self, step: int = 0):
+
+        def _callback_impl_factory(conf):
+            def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
+                if _step % conf.debug_print_freq == 0 or _step == 0:
+                    msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
+                    self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
+            return _callback_impl
+
+        if step < self.adamswa_end:  # adam and adamswa use the same optimizer
+            self.optimizer = _Adam(
+                self.global_optimizer_model.parameters(), lr=self.adamconf.lr, betas=self.adamconf.betas,
+                eps=self.adamconf.eps, weight_decay=self.adamconf.weight_decay, amsgrad=self.adamconf.amsgrad
+            )
+        elif step < self.ncg_end:
+            self.optimizer = _NonlinearCG(
+                self.global_optimizer_model.parameters(), max_iters=self.ncgconf.max_iters,
+                gtol=self.ncgconf.gtol, ftol=self.ncgconf.ftol, error=self.ncgconf.error,
+                callback=_callback_impl_factory(self.ncgconf) if self.ncgconf.debug else None
+            )
+        else:  # ncgswa stage
+            self.optimizer = _NonlinearCG(
+                self.global_optimizer_model.parameters(), max_iters=self.ncgswaconf.max_iters,
+                gtol=self.ncgswaconf.gtol, ftol=self.ncgswaconf.ftol, error=self.ncgswaconf.error,
+                callback=_callback_impl_factory(self.ncgswaconf) if self.ncgswaconf.debug else None
+            )
+
+        # scheduler has to be rebound to the optimizer
+        self.scheduler = _instantiate_sched(self.cfg, self.optimizer)
 
     def _update_training_cfg(self, key: str):
         """Update the main I/O frquencies.
         """
 
-        if key in ["adam", "cg", "swa"]:
+        if key in ["adam", "ncg", "adamswa", "ncgswa"]:
             target = self.cfg.training[key]
         else:
             raise ValueError(f"Unrecognized key: {key}")
@@ -560,6 +656,7 @@ class AdamCGSWA(SolverBase):
         filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
         if filename.is_file():
             try:
+                self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
                 self.swa_model.load_state_dict(_torch.load(filename, map_location=self.device))
                 self.log.info(f"{_colored('Success loading swa-model:', 'green')} {filename}")
             except Exception:
@@ -570,19 +667,19 @@ class AdamCGSWA(SolverBase):
         # load usual things
         SolverBase.load_network(self)
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, force=False):
         """Save checkpoints.
         """
 
         # no need to save checkpoint
-        if self.step % self.save_network_freq != 0:
+        if self.step % self.save_network_freq != 0 and not force:
             return
 
         # save usual things
-        SolverBase.save_checkpoint(self)
+        SolverBase.save_checkpoint(self, force)
 
         # save swa model
-        if self.step >= self.swa_start and self.manager.rank == 0:
+        if self.manager.rank == 0 and self.swa_model is not None:
             filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
             _torch.save(self.swa_model.state_dict(), filename)
             msg = _colored("[step: {:10d}] saved swa-model checkpoint to {}", "green")
@@ -602,7 +699,7 @@ class AdamCGSWA(SolverBase):
         # outputing trasient swa model following inferecing frequencies
         msg = _colored("[step: {:10d}] saved swa-model snapshot to {} in {:10.3e} ms", "green")
         if self.manager.rank == 0:
-            if self.step >= self.swa_start and self.step % self.cfg.training.rec_inference_freq == 0:
+            if self.swa_model is not None and self.step % self.cfg.training.rec_inference_freq == 0:
 
                 # filename
                 filename = _pathlib.Path(self.network_dir).joinpath("inferencers")
@@ -684,7 +781,9 @@ class LBFGSConf(_OptimizerConf):
 
 
 @dataclass
-class NonlinearCGConf(_OptimizerConf):
+class NCGConf(_OptimizerConf):
+    """Configuration for Nonlinear CG solver.
+    """
     _target_: str = "helpers.optimizers.NonlinearCG"
     max_iters: int = 1000
     gtol: float = 1e-7
@@ -695,21 +794,23 @@ class NonlinearCGConf(_OptimizerConf):
 
 
 @dataclass
-class AdamCGSWAConf(_OptimizerConf):
+class AdamNCGSWAConf(_OptimizerConf):
     """Mixed optimization strategy.
     """
-    adam: _OptimizerConf = _AdamConf
-    cg: NonlinearCGConf = NonlinearCGConf()
-    swa: NonlinearCGConf = NonlinearCGConf()
+    adam: _AdamConf = _AdamConf()
+    adamswa: _AdamConf = _AdamConf()  # note, adamswa is not used. We use the same optimizer for Adam & AdamSWA
+    ncg: NCGConf = NCGConf()
+    ncgswa: NCGConf = NCGConf()
 
 
 @dataclass
-class AdamCGSWATrainingConf(_DefaultTraining):
+class AdamNCGSWATrainingConf(_DefaultTraining):
     """Training control for Adam-CG-Conf stragety.
     """
     adam: _DefaultTraining = _DefaultTraining()
-    cg: _DefaultTraining = _DefaultTraining()
-    swa: _DefaultTraining = _DefaultTraining()
+    adamswa: _DefaultTraining = _DefaultTraining()
+    ncg: _DefaultTraining = _DefaultTraining()
+    ncgswa: _DefaultTraining = _DefaultTraining()
 
 
 def register_optimizer_configs() -> None:
@@ -723,17 +824,17 @@ def register_optimizer_configs() -> None:
     _ConfigStore.instance().store(
         group="optimizer",
         name="nonlinear-cg",
-        node=NonlinearCGConf,
+        node=NCGConf,
     )
     _ConfigStore.instance().store(
         group="optimizer",
-        name="adam-cg-swa",
-        node=AdamCGSWAConf,
+        name="adamswa-ncgswa",
+        node=AdamNCGSWAConf,
     )
 
-    # note this is registered to training!
+    # note this is registered to training section! Not the optimizer section
     _ConfigStore.instance().store(
         group="training",
-        name="adam-cg-swa",
-        node=AdamCGSWATrainingConf,
+        name="adamswa-ncgswa",
+        node=AdamNCGSWATrainingConf,
     )
