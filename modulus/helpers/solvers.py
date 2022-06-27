@@ -85,6 +85,7 @@ class SolverBase:
     amp = property(lambda self: self.cfg.training.amp)
     save_filetypes = property(lambda self: self.cfg.save_filetypes)
     summary_histograms = property(lambda self: self.cfg.summary_histograms)
+    rank = property(lambda self: self.manager.rank)
 
     def __init__(self, cfg: _DictConfig, domain: _Domain):
 
@@ -129,11 +130,11 @@ class SolverBase:
             self.shapes.append(param.shape)
 
         # make directory
-        if self.manager.rank == 0:
+        if self.rank == 0:
             _pathlib.Path(self.network_dir).mkdir(exist_ok=True)
 
         # write config to tensorboard as pure text
-        if self.manager.rank == 0:
+        if self.rank == 0:
             self.writer.add_text("config", f"<pre>{str(_OmegaConf.to_yaml(self.cfg))}</pre>")
 
         # distributed barrier before starting the train loop
@@ -174,9 +175,11 @@ class SolverBase:
                     if filename.is_file():
                         try:
                             model.load(i_dir, map_location=self.device)
-                            self.log.info(f"{_colored('Success loading model:', 'green')} {filename}")
+                            msg = f"[Rank {self.rank:2d}] {_colored('Success loading model:', 'green')} {filename}"
+                            self.log.info(msg)
                         except Exception:
-                            self.log.error(f"{_colored('Fail loading model:', 'red')} {filename}")
+                            msg = f"[Rank {self.rank:2d}] {_colored('Fail loading model:', 'red')} {filename}"
+                            self.log.error(msg)
                     else:
                         self.log.warning(f"model {model.checkpoint_filename} not found in {i_dir}")
 
@@ -190,13 +193,15 @@ class SolverBase:
                 self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                 self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
                 self.aggregator.load_state_dict(checkpoint["aggregator_state_dict"])
-                self.log.info(f"{_colored('Success loading optimizer:', 'green')} {filename}")
+                msg = f"[Rank {self.rank:2d}] {_colored('Success loading optimizer:', 'green')} {filename}"
+                self.log.info(msg)
             except Exception:
                 self.initial_step = 0
-                self.log.info(f"{_colored('Fail loading optimizer:', 'red')} {filename}")
+                msg = f"[Rank {self.rank:2d}] {_colored('Fail loading optimizer:', 'red')} {filename}"
+                self.log.info(msg)
         else:
             self.initial_step = 0
-            self.log.warning("optimizer checkpoint not found")
+            self.log.warning(f"[Rank {self.rank:2d}] optimizer checkpoint not found")
 
         # attempt to restore models
         for model in self.saveable_models:
@@ -204,14 +209,16 @@ class SolverBase:
             if filename.is_file():
                 try:
                     model.load(self.network_dir, map_location=self.device)
-                    self.log.info(f"{_colored('Success loading model:', 'green')} {filename}")
+                    msg = f"[Rank {self.rank:2d}] {_colored('Success loading model:', 'green')} {filename}"
+                    self.log.info(msg)
                 except Exception:
-                    self.log.info(f"{_colored('Fail loading model:', 'red')} {filename}")
+                    msg = f"[Rank {self.rank:2d}] {_colored('Fail loading model:', 'red')} {filename}"
+                    self.log.info(msg)
             else:
-                self.log.warning("model " + model.checkpoint_filename + " not found")
+                self.log.warning(f"[Rank {self.rank:2d}] model {model.checkpoint_filename} not found")
 
         # logging initial step
-        self.log.info(f"Training will start from step {self.initial_step}")
+        self.log.info(f"[Rank {self.rank:2d}] Training will start from step {self.initial_step}")
 
     def save_checkpoint(self, force=False):
         """Save a checkpoint.
@@ -223,7 +230,7 @@ class SolverBase:
 
         msg = _colored("[step: {:10d}] saved checkpoint to {}", "green")
 
-        if self.manager.rank == 0:
+        if self.rank == 0:
             # save models
             for model in self.saveable_models:
                 model.save(self.network_dir)
@@ -265,14 +272,14 @@ class SolverBase:
         """
         raise NotImplementedError
 
-    def _logging_info(self, loss: float):
+    def _output_results(self, loss: float):
         """A helper to log info to files.
         """
 
         msg = _colored("[step: {:10d}] saved {} results to {} in {:10.3e}s", "blue")
 
         # rank 0: write train / inference / validation datasets to tensorboard and file
-        if self.manager.rank == 0:
+        if self.rank == 0:
             if self.step % self.cfg.training.rec_constraint_freq == 0:
                 timer = TimerWalltime()
                 self.domain.rec_constraints(self.network_dir)
@@ -297,35 +304,82 @@ class SolverBase:
         if self.manager.distributed:
             _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
-    def _print_stdout_info(self, loss: float, timer):
+    def _log_stdout(self, loss: float, timer):
         """Print some info to stdout.
         """
 
         if self.step % self.print_stats_freq != 0:
             return
 
-        # string template
-        msg = "[step: {:10d}] loss={:10.3e}, lr={:10.3e}, time/iter={:10.3e}"
+        msg = "[step: {:10d}] loss={:10.3e}, lr={:10.3e}, time elapsed={:10.3e}ms"
 
-        # synchronize and get end time
-        elapsed_time = timer.elapsed_time() / self.print_stats_freq
+        # elapsed time since last call to _log_tensorboard
+        elapsed_time = timer.elapsed_time()
 
-        # Reduce loss across all GPUs
+        # reduce loss and timer info across all ranks
         if self.manager.distributed:
-
-            # loss
+            loss = _torch.tensor(loss).to(self.device)  # in-case some optimizer returns loos as float
             _torch.distributed.reduce(loss, 0, op=_torch.distributed.ReduceOp.SUM)
-            loss = loss.cpu().detach().numpy() / self.manager.world_size
+            loss = loss.cpu().detach().item() / self.manager.world_size
 
-            # elapsed_time
             elapsed_time = _torch.tensor(elapsed_time).to(self.device)
             _torch.distributed.reduce(elapsed_time, 0, op=_torch.distributed.ReduceOp.SUM)
-            elapsed_time = elapsed_time.cpu().numpy() / self.manager.world_size
+            elapsed_time = elapsed_time.cpu().item() / self.manager.world_size
 
-        if self.manager.rank == 0:
+        if self.rank == 0:
             self.log.info(msg.format(self.step, loss, self.scheduler.get_last_lr()[0], elapsed_time))
 
+        # wait if necessarry
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
         # reset timer
+        timer.reset()
+
+    def _log_tensorboard(self, timer):
+        """Write to tensorboard.
+        """
+
+        if self.step % self.summary_freq != 0:
+            return
+
+        # elapsed time since last call to _log_tensorboard
+        elapsed_time = timer.elapsed_time()
+        timer.reset()  # reset for measuring time used in logging
+
+        # re-calculate each loss term
+        losses = self.domain.compute_losses(self.step)
+        loss = self.aggregator(losses, self.step).detach()
+
+        # gather from different ranks
+        if self.manager.distributed:
+            with _torch.no_grad():
+                for key in losses.keys():
+                    _torch.distributed.reduce(losses[key], 0, op=_torch.distributed.ReduceOp.SUM)
+                    losses[key] = losses[key].detach().cpu().item() / self.manager.world_size
+                _torch.distributed.reduce(loss, 0, op=_torch.distributed.ReduceOp.SUM)
+                loss = loss.detach().cpu().item() / self.manager.world_size
+
+            # torch.distributed only handles tensors
+            elapsed_time = _torch.tensor(elapsed_time, device=self.device)
+            _torch.distributed.reduce(elapsed_time, 0, op=_torch.distributed.ReduceOp.SUM)
+            elapsed_time = elapsed_time.detach().cpu().item()
+
+        if self.rank == 0:
+            self.writer.add_scalar("Train/time_elapsed", elapsed_time, self.step, new_style=True)
+            self.writer.add_scalar("Train/loss_aggregated", loss, self.step, new_style=True)
+
+            for key, val in losses.items():
+                self.writer.add_scalar(f"Train/loss_{str(key)}", val, self.step, new_style=True)
+
+            # print a message to stdout
+            msg = _colored("[step: {:10d}] updated tensorboard in {:10.3e} ms", "green")
+            self.log.info(msg.format(self.step, timer.elapsed_time()))
+
+        # wait if necessarry
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
         timer.reset()
 
 
@@ -374,7 +428,7 @@ class AdamNCGSWA(SolverBase):
         super().__init__(cfg, domain)
 
         # log the change in max_steps
-        self.log.warn(_colored(f"max_steps is modified to {self.max_steps}.", "red"))
+        self.log.warn(f"[Rank {self.rank:2d}] " + _colored(f"max_steps is modified to {self.max_steps}.", "red"))
 
         # initialize swa model holder
         self.swa_model = None
@@ -414,13 +468,13 @@ class AdamNCGSWA(SolverBase):
         """
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+        tbtimer = TimerCuda() if self.manager.cuda else TimerWalltime()
         self.step = self.initial_step
         loss = self.objective_function()
-        self._logging_info(loss)
+        self._output_results(loss)
+        self._log_stdout(loss, timer)
+        self._log_tensorboard(tbtimer)
         self.save_checkpoint()
-        self._print_stdout_info(loss, timer)
-
-        self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
 
         # stage 1: Adam solver
         self._adam_solve()
@@ -434,7 +488,7 @@ class AdamNCGSWA(SolverBase):
         # stage 4: train with nonlinear cg but averaged with SWA
         self._ncgswa_solve()
 
-        if self.manager.rank == 0:
+        if self.rank == 0:
             self.log.info(f"[step: {self.step:10d}] finished training!")
 
     def _adam_solve(self):
@@ -442,7 +496,7 @@ class AdamNCGSWA(SolverBase):
         """
 
         if self.initial_step + 1 >= self.adam_end:  # meaning we already done with adam
-            msg = "The next step {} outside Adam range [{}, {}). Skip"
+            msg = f"[Rank {self.rank:2d}] " + "The next step {} outside Adam range [{}, {}). Skip"
             self.log.info(_colored(msg.format(self.initial_step+1, self.adam_start, self.adam_end), "blue"))
             return
 
@@ -450,6 +504,7 @@ class AdamNCGSWA(SolverBase):
             self.swa_model = None
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+        tbtimer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
         # update current I/O frequencies
         self._update_training_cfg("adam")
@@ -467,10 +522,10 @@ class AdamNCGSWA(SolverBase):
             self.loss = float(loss.detach().cpu())
 
             # save and print states
-            self._logging_info(loss)
+            self._output_results(loss)
+            self._log_stdout(loss, timer)
+            self._log_tensorboard(tbtimer)
             self.save_checkpoint()
-            self._print_stdout_info(loss, timer)
-            self._write_to_tensorboard()
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
@@ -480,15 +535,16 @@ class AdamNCGSWA(SolverBase):
         """
 
         if self.initial_step + 1 >= self.adamswa_end:  # meaning we already done with adam + swa
-            msg = "The next step {} outside AdamSWA range [{}, {}). Skip"
+            msg = f"[Rank {self.rank:2d}] " + "The next step {} outside AdamSWA range [{}, {}). Skip"
             self.log.info(_colored(msg.format(self.initial_step+1, self.adamswa_start, self.adamswa_end), "blue"))
             return
 
         if self.initial_step + 1 == self.adamswa_start:  # i.e., not a continue run
-            self.log.info(_colored("Creating a new SWA model for AdamSWA.", "blue"))
+            self.log.info(f"[Rank {self.rank:2d}] " + _colored("Creating a new SWA model for AdamSWA.", "blue"))
             self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+        tbtimer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
         # update current I/O frequencies
         self._update_training_cfg("adamswa")
@@ -509,10 +565,10 @@ class AdamNCGSWA(SolverBase):
             self.loss = float(loss.detach().cpu())
 
             # save and print states
-            self._logging_info(loss)
+            self._output_results(loss)
+            self._log_stdout(loss, timer)
+            self._log_tensorboard(tbtimer)
             self.save_checkpoint()
-            self._print_stdout_info(loss, timer)
-            self._write_to_tensorboard()
         else:
             self.initial_step = self.step
 
@@ -523,7 +579,7 @@ class AdamNCGSWA(SolverBase):
             self.save_checkpoint(True)  # force writing a checkpoint
 
             # remove swa_model
-            self.log.info(_colored("Deleting AdamSWA's SWA model.", "blue"))
+            self.log.info(f"[Rank {self.rank:2d}] " + _colored("Deleting AdamSWA's SWA model.", "blue"))
             self.swa_model = None
 
     def _ncg_solve(self):
@@ -531,7 +587,7 @@ class AdamNCGSWA(SolverBase):
         """
 
         if self.initial_step + 1 >= self.ncg_end:  # meaning we already done with nonlinear cg
-            msg = "The next step {} outside NCG range [{}, {}). Skip"
+            msg = f"[Rank {self.rank:2d}] " + "The next step {} outside NCG range [{}, {}). Skip"
             self.log.info(_colored(msg.format(self.initial_step+1, self.ncg_start, self.ncg_end), "blue"))
             return
 
@@ -545,6 +601,7 @@ class AdamNCGSWA(SolverBase):
         self._update_training_cfg("ncg")
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+        tbtimer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
         for self.step in range(self.initial_step+1, self.ncg_end):
 
@@ -552,10 +609,10 @@ class AdamNCGSWA(SolverBase):
             loss = self.optimizer.step(self.objective_function)
 
             # save and print states
-            self._logging_info(loss)
+            self._output_results(loss)
+            self._log_stdout(loss, timer)
+            self._log_tensorboard(tbtimer)
             self.save_checkpoint()
-            self._print_stdout_info(loss, timer)
-            self._write_to_tensorboard()
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
@@ -565,12 +622,12 @@ class AdamNCGSWA(SolverBase):
         """
 
         if self.initial_step + 1 >= self.ncgswa_end:  # meaning we already done with nonlinear cg
-            msg = "The next step {} outside NCGSWA range [{}, {}). Skip"
+            msg = f"[Rank {self.rank:2d}] " + "The next step {} outside NCGSWA range [{}, {}). Skip"
             self.log.info(_colored(msg.format(self.initial_step+1, self.ncgswa_start, self.ncgswa_end), "blue"))
             return
 
         if self.initial_step + 1 == self.ncgswa_start:  # i.e., not a continue run
-            self.log.info(_colored("Creating a new SWA model for NCGSWA.", "blue"))
+            self.log.info(f"[Rank {self.rank:2d}] " + _colored("Creating a new SWA model for NCGSWA.", "blue"))
             self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
 
         # creeate cg solver and a dummy scheduler
@@ -580,6 +637,7 @@ class AdamNCGSWA(SolverBase):
         self._update_training_cfg("ncgswa")
 
         timer = TimerCuda() if self.manager.cuda else TimerWalltime()
+        tbtimer = TimerCuda() if self.manager.cuda else TimerWalltime()
 
         for self.step in range(self.initial_step+1, self.ncgswa_end):
 
@@ -590,10 +648,10 @@ class AdamNCGSWA(SolverBase):
             self.swa_model.update_parameters(self.global_optimizer_model)
 
             # save and print states
-            self._logging_info(loss)
+            self._output_results(loss)
+            self._log_stdout(loss, timer)
+            self._log_tensorboard(tbtimer)
             self.save_checkpoint()
-            self._print_stdout_info(loss, timer)
-            self._write_to_tensorboard()
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
@@ -602,7 +660,7 @@ class AdamNCGSWA(SolverBase):
 
         def _callback_impl_factory(conf):
             def _callback_impl(_step, _loss, _gknorm, _alpha, _beta, *args, **kwargs):
-                if _step % conf.debug_print_freq == 0 or _step == 0:
+                if self.rank == 0 and (_step % conf.debug_print_freq == 0 or _step == 0):
                     msg = "\t[CG: {:10d}-{:5d}] loss={:10.3e}, gknorm={:10.3e}, alpha={:10.3e}, beta={:10.3e}"
                     self.log.info(_colored(msg, "cyan").format(self.step, _step, _loss, _gknorm, _alpha, _beta))
             return _callback_impl
@@ -658,11 +716,11 @@ class AdamNCGSWA(SolverBase):
             try:
                 self.swa_model = _torch.optim.swa_utils.AveragedModel(self.global_optimizer_model)
                 self.swa_model.load_state_dict(_torch.load(filename, map_location=self.device))
-                self.log.info(f"{_colored('Success loading swa-model:', 'green')} {filename}")
+                self.log.info(f"[Rank {self.rank:2d}] {_colored('Success loading swa-model:', 'green')} {filename}")
             except Exception:
-                self.log.info(f"{_colored('Fail loading swa-model:', 'red')} {filename}")
+                self.log.info(f"[Rank {self.rank:2d}] {_colored('Fail loading swa-model:', 'red')} {filename}")
         else:
-            self.log.warning("swa-model checkpoint not found")
+            self.log.warning(f"[Rank {self.rank:2d}] swa-model checkpoint not found")
 
         # load usual things
         SolverBase.load_network(self)
@@ -679,7 +737,7 @@ class AdamNCGSWA(SolverBase):
         SolverBase.save_checkpoint(self, force)
 
         # save swa model
-        if self.manager.rank == 0 and self.swa_model is not None:
+        if self.rank == 0 and self.swa_model is not None:
             filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
             _torch.save(self.swa_model.state_dict(), filename)
             msg = _colored("[step: {:10d}] saved swa-model checkpoint to {}", "green")
@@ -689,16 +747,16 @@ class AdamNCGSWA(SolverBase):
         if self.manager.distributed:
             _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
-    def _logging_info(self, loss: float):
+    def _output_results(self, loss: float):
         """A helper to log info to files.
         """
 
         # doing regular things
-        super()._logging_info(loss)
+        super()._output_results(loss)
 
         # outputing trasient swa model following inferecing frequencies
         msg = _colored("[step: {:10d}] saved swa-model snapshot to {} in {:10.3e} ms", "green")
-        if self.manager.rank == 0:
+        if self.rank == 0:
             if self.swa_model is not None and self.step % self.cfg.training.rec_inference_freq == 0:
 
                 # filename
@@ -727,43 +785,6 @@ class AdamNCGSWA(SolverBase):
                 self.log.info(msg.format(self.step, filename, timer.elapsed_time()))
 
         # wait for rank 0 to finish the job
-        if self.manager.distributed:
-            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
-
-    def _write_to_tensorboard(self):
-        """Write to tensorboard.
-        """
-
-        if self.step % self.summary_freq != 0:
-            return
-
-        # timer to measure performance
-        timer = TimerWalltime()
-
-        # re-calculate each loss term
-        losses = self.domain.compute_losses(self.step)
-
-        # write each loss term
-        with _torch.no_grad():
-            for key, val in losses.items():
-                # gather data if running distributedly
-                if self.manager.distributed:
-                    _torch.distributed.all_reduce(val, _torch.distributed.ReduceOp.SUM)
-                    val /= self.manager.world_size
-                # only rank 0 can write
-                if self.manager.rank == 0:
-                    self.writer.add_scalar(f"Train/loss_{str(key)}", val, self.step, new_style=True)
-
-        # write total loss
-        if self.manager.rank == 0:
-            loss = self.aggregator(losses, self.step).detach().data
-            self.writer.add_scalar("Train/loss_aggregated", loss, self.step, new_style=True)
-
-            # print a message to stdout
-            msg = _colored(f"[step: {self.step:10d}] updated tensorboard in {timer.elapsed_time():10.3e} ms", "green")
-            self.log.info(msg)
-
-        # wait if necessarry
         if self.manager.distributed:
             _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
 
