@@ -18,7 +18,7 @@ root = pathlib.Path(__file__).resolve().parent
 
 baseconf = OmegaConf.load(root.joinpath("nl1-nn16-npts1024", "config.yaml"))
 
-for nl in [1, 2, 3, 4, 5]:
+for nl in [1, 2, 3]:
     for nn in [16, 32, 64, 128, 256]:
         for npts in [2**i for i in range(10, 17)]:
             target = OmegaConf.load(root.joinpath(f"nl{nl}-nn{nn}-npts{npts}", "config.yaml"))

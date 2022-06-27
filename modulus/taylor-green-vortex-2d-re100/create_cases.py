@@ -27,7 +27,7 @@ def main(force: bool):
         job_sh = fobj.read()
 
     nns = [16, 32, 64, 128, 256]
-    nls = [1, 2, 3, 4, 5]
+    nls = [1, 2, 3]
     nptss = [2**i for i in range(10, 17)]
 
     for nl, nn, npts in itertools.product(nls, nns, nptss):
