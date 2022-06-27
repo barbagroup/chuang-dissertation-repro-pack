@@ -9,8 +9,8 @@
 #SBATCH --job-name="2D TGV"
 #SBATCH --nodes=1
 #SBATCH --gpus=1
-#SBATCH --cpus-per-gpu=6
-#SBATCH --partition=dgx2
+#SBATCH --cpus-per-gpu=10
+#SBATCH --partition=batch
 #SBATCH --exclude dgx1-[000-002,004]
 #SBATCH --time=0-04:00:00
 #SBATCH --output=slurm-%A_%a.out

@@ -29,7 +29,7 @@ for parent in pathlib.Path(__file__).resolve().parents:
         from helpers.inferencers import SaveModelInferencer  # pylint: disable=import-error
         from helpers.aggregators import register_loss_configs  # pylint: disable=import-error
         from helpers.schedulers import register_scheduler_configs  # pylint: disable=import-error
-        from helpers.solvers import AdamCGSWA  # pylint: disable=import-error
+        from helpers.solvers import AdamNCGSWA  # pylint: disable=import-error
         from helpers.solvers import register_optimizer_configs  # pylint: disable=import-error
         from helpers.utils import process_domain  # pylint: disable=import-error
         from helpers.constraints import StepAwarePointwiseInteriorConstraint as _StepAwarePointwiseInteriorConstraint
@@ -246,7 +246,7 @@ def main(cfg: _ModulusConfig):
     nodes, _ = get_computational_graph(cfg)
     geo = get_computational_domain(cfg)
     domain = get_solver_domains(nodes, geo, cfg)
-    solver = AdamCGSWA(cfg=cfg, domain=domain)
+    solver = AdamNCGSWA(cfg=cfg, domain=domain)
     solver.solve()
     return 0
 

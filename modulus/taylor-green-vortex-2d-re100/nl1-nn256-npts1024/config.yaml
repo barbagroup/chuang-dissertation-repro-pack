@@ -2,9 +2,9 @@ defaults :
   - modulus_default
   - arch: [fully_connected,]
   - scheduler: tf_exponential_lr
-  - optimizer: adam-cg-swa
+  - optimizer: adamswa-ncgswa
   - loss: NSAnnealingLossAggregator
-  - override training: adam-cg-swa
+  - override training: adamswa-ncgswa
   - _self_
 
 jit: true
@@ -30,7 +30,7 @@ optimizer:
     weight_decay: 0.0
     amsgrad: False
 
-  swa:
+  ncgswa:
     max_iters: 50000
     gtol: 1.0e-6
     ftol: 1.0e-6
@@ -47,10 +47,13 @@ training:
     rec_inference_freq: 10000
     summary_freq: 100
 
-  cg:
+  adamswa:
     max_steps : 0
 
-  swa:
+  ncg:
+    max_steps : 0
+
+  ncgswa:
     max_steps : 200
     rec_results_freq : 1
     save_network_freq: 1
