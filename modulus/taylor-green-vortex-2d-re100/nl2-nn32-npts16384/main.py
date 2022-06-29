@@ -96,7 +96,7 @@ def get_computational_domain(cfg: _ModulusConfig):
     """
 
     xbg, xed = process_domain(cfg.custom.x)
-    ybg, yed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
     geo = _Rectangle((xbg, ybg), (xed, yed))
 
     return geo
@@ -107,7 +107,7 @@ def get_initial_constraint(nodes, geo, cfg):
     """
 
     xbg, xed = process_domain(cfg.custom.x)
-    ybg, yed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
     tbg, _ = process_domain(cfg.custom.t)
 
     x, y, t = sympy.symbols("x, y, t")
@@ -131,7 +131,7 @@ def get_pde_constraint(nodes, geo, cfg):
     """
 
     xbg, xed = process_domain(cfg.custom.x)
-    ybg, yed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
     tbg, ted = process_domain(cfg.custom.t)
 
     x, y, t = sympy.symbols("x, y, t")
@@ -154,7 +154,7 @@ def get_residual_monitor(nodes, geo, cfg):
     """
 
     xbg, xed = process_domain(cfg.custom.x)
-    ybg, yed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
     tbg, ted = process_domain(cfg.custom.t)
 
     x, y, t = sympy.symbols("x, y, t")
@@ -184,7 +184,7 @@ def get_ic_monitor(nodes, geo, cfg):
     """
 
     xbg, xed = process_domain(cfg.custom.x)
-    ybg, yed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
 
     x, y, t = sympy.symbols("x, y, t")
 
