@@ -6,8 +6,9 @@
 #
 # Distributed under terms of the BSD 3-Clause license.
 
-"""Post processing data of Taylor-Green vortex 2D Re100 w/ single network mode.
+"""Gathering data from each case to a single HDF file and csv files to speed visualization up.
 """
+import collections
 import itertools
 import multiprocessing
 import sys
@@ -44,8 +45,7 @@ from torch import from_numpy as torchfromnumpy
 for parent in pathlib.Path(__file__).resolve().parents:
     if parent.joinpath("helpers").is_dir():
         sys.path.insert(0, str(parent))
-        from helpers.utils import get_rawmodel_from_file  # pylint: disable=import-error
-        from helpers.utils import get_swamodel_from_file  # pylint: disable=import-error
+        from helpers.utils import get_model_from_file  # pylint: disable=import-error
         from helpers.utils import process_domain  # pylint: disable=import-error
         break
 else:
@@ -95,6 +95,9 @@ def get_case_data(cfg, workdir, fields=["u", "v", "p"]):
     """Get data from a single case.
     """
 
+    # folder for inference results
+    inferdir = workdir.joinpath("inferencers")
+
     # domain bounds
     xbg, xed = process_domain(cfg.custom.x)
     ybg, yed = process_domain(cfg.custom.y)
@@ -106,46 +109,49 @@ def get_case_data(cfg, workdir, fields=["u", "v", "p"]):
     ], key=int)
 
     # get the computational graph
-    _, _, graph, dtype = get_rawmodel_from_file(cfg, workdir.joinpath("inferencers", f"flow-net-{mxstep}.pth"), 2)
+    graph = {}
+    _, _, graph["orig"], dtype = get_model_from_file(cfg, inferdir.joinpath(f"flow-net-{mxstep}.pth"), 2)
+    _, _, graph["swa"], _ = get_model_from_file(cfg, inferdir.joinpath(f"swa-model-{mxstep}.pth"), 2)
 
     # get a subset in the computational graph that gives us desired quantities
-    model = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
+    model = {key: Graph(val, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields)) for key, val in graph.items()}
 
-    # gridlines
-    npx = nplinspace(xbg, xed, 513)  # vertices
-    npx = (npx[1:] + npx[:-1]) / 2  # cell centers
-    npy = nplinspace(ybg, yed, 513)  # vertices
-    npy = (npy[1:] + npy[:-1]) / 2  # cell centers
-    npx, npy = npmeshgrid(npx, npy)
-    shape = npx.shape
-
-    # torch version of gridlines; reshape to N by 1
-    torchx = torchtensor(npx.reshape(-1, 1), dtype=dtype, device=cfg.device, requires_grad=False)
-    torchy = torchtensor(npy.reshape(-1, 1), dtype=dtype, device=cfg.device, requires_grad=False)
-
-    # error data holder
+    # an empty error data holder
     data = DataFrame(
         data=None,
         index=Index([], dtype=float, name="time"),
-        columns=MultiIndex.from_product((["l1norm", "l2norm"], fields)),
+        columns=MultiIndex.from_product((["orig", "swa"], ["l1norm", "l2norm"], fields)),
     )
 
-    # snapshot data holder (for contour plotting)
-    snapshots = {"x": npx, "y": npy}
+    # an empty snapshot contour data holder
+    snapshots = collections.defaultdict(lambda: collections.defaultdict(dict))
+
+    # generate gridlines for contour
+    snapshots.update({"x": nplinspace(xbg, xed, 513), "y": nplinspace(ybg, yed, 513)})
+    snapshots.update({key: (val[1:] + val[:-1]) / 2 for key, val in snapshots.items()})
+    snapshots["x"], snapshots["y"] = npmeshgrid(snapshots["x"], snapshots["y"])
+    shape = snapshots["x"].shape
+
+    # torch version of gridlines; reshape to N by 1
+    torchx = torchtensor(snapshots["x"].reshape(-1, 1), dtype=dtype, device=cfg.device, requires_grad=False)
+    torchy = torchtensor(snapshots["y"].reshape(-1, 1), dtype=dtype, device=cfg.device, requires_grad=False)
 
     for time in cfg.eval_times:
+        for key in ["orig", "swa"]:
+            preds = model[key]({"x": torchx, "y": torchy, "t": torchfulllike(torchx, time)})
+            preds = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
 
-        preds = model({"x": torchx, "y": torchy, "t": torchfulllike(torchx, time)})
-        preds = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
+            for field in fields:
+                ans = analytical_solution(snapshots["x"], snapshots["y"], time, 0.01, field)
+                err = abs(preds[field]-ans)
 
-        for key in fields:
-            ans = analytical_solution(npx, npy, time, 0.01, key)
-            err = abs(preds[key]-ans)
-            data.loc[time, ("l1norm", key)] = 4 * nppi**2 * err.sum() / err.size
-            data.loc[time, ("l2norm", key)] = 2 * nppi * npsqrt((err**2).sum()/err.size)
+                # save the prediction data and error distribution
+                snapshots[time][key][field] = preds[field]
+                snapshots[time][key][f"err-{field}"] = err
 
-        # save the prediction data
-        snapshots[time] = preds
+                # norms
+                data.loc[time, (key, "l1norm", field)] = 4 * nppi**2 * err.sum() / err.size
+                data.loc[time, (key, "l2norm", field)] = 2 * nppi * npsqrt((err**2).sum()/err.size)
 
     return data, snapshots
 
@@ -189,7 +195,7 @@ def get_error_vs_walltime(cfg, workdir, fields):
 
             # get the computational graph
             print(f"[Rank {rank}] processing {rawfile.name}")
-            step, timestamp, graph, _ = get_rawmodel_from_file(cfg, rawfile, 2)
+            step, timestamp, graph, _ = get_model_from_file(cfg, rawfile, 2)
 
             # get a subset in the computational graph that gives us desired quantities
             rawmodel = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
@@ -197,7 +203,7 @@ def get_error_vs_walltime(cfg, workdir, fields):
             # get swa model if it exists, otherwise, duplicate rawmodel
             print(f"[Rank {rank}] processing {swafile.name}")
             if swafile.is_file():
-                swamodel = get_swamodel_from_file(cfg, rawmodel, swafile)
+                swamodel = get_model_from_file(cfg, swafile, 2)
             else:
                 swamodel = rawmodel
 
@@ -264,12 +270,10 @@ def main(workdir, force=False):
     """
 
     # save all post-processed data here
-    workdir.joinpath("output").mkdir(exist_ok=True)
+    workdir.joinpath("outputs").mkdir(exist_ok=True)
 
     # cases' names
-    # cases = [f"nl6-nn256/a100-{n}" for n in [1, 2, 4, 8]]
-    # cases.extend([f"nl1-nn{n}" for n in [16]])
-    cases = [f"nl1-nn{n}" for n in [32, 64, 128, 256, 512]]
+    cases = [f"nl{nl}-nn128-npts{npts}" for nl, npts in itertools.product([1, 2, 3], [2**i for i in range(10, 17)])]
 
     # target fields
     fields = ["u", "v", "p"]
@@ -277,17 +281,18 @@ def main(workdir, force=False):
     # initialize a data holder for errors vs simulation time
     sim_time_err = []
 
-    # initialize a data holder for errors vs iteration/wall-time
-    wall_time_err = []
-
-    # hdf5 file
-    with h5open(workdir.joinpath("output", "snapshots.h5"), "a") as h5file:
+    # process the accuracy of the latest trained model
+    with h5open(workdir.joinpath("outputs", "snapshots.h5"), "a") as h5file:
 
         # read and process data case-by-case
         for job in cases:
 
-            if f"{job}/x" in h5file:
-                del h5file[f"{job}"]
+            if f"{job}" in h5file:
+                if force:
+                    del h5file[f"{job}"]
+                else:
+                    print(f"Skipping {job}")
+                    continue
 
             print(f"Handling {job}")
 
@@ -296,27 +301,39 @@ def main(workdir, force=False):
             # snapshot solutions and errors wrt simulation time
             cfg = OmegaConf.load(jobdir.joinpath(".hydra", "config.yaml"))
             cfg.device = "cpu"
-            cfg.eval_times = list(range(0, 101, 2))
+            cfg.eval_times = list(range(0, 101, 10))
 
             err, snapshots = get_case_data(cfg, jobdir, fields)
             sim_time_err.append(err)
 
             h5file.create_dataset(f"{job}/x", data=snapshots["x"], compression="gzip")
             h5file.create_dataset(f"{job}/y", data=snapshots["y"], compression="gzip")
-            for time, field in itertools.product(cfg.eval_times, fields):
-                h5file.create_dataset(f"{job}/{time}/{field}", data=snapshots[time][field], compression="gzip")
-
-            # errors wrt iterations/wall-time
-            cfg.eval_times = [2, 8, 32]
-            wall_time_err.append(get_error_vs_walltime(cfg, jobdir, fields))
+            for time, mtype, field in itertools.product(cfg.eval_times, ["orig", "swa"], fields):
+                # predictions
+                key = f"{job}/{time}/{mtype}/{field}"
+                val = snapshots[time][mtype][field]
+                h5file.create_dataset(key, data=val, compression="gzip")
+                # spatial errors
+                key = f"{job}/{time}/{mtype}/err-{field}"
+                val = snapshots[time][mtype][f"err-{field}"]
+                h5file.create_dataset(key, data=val, compression="gzip")
 
     # concat and export errors wrt simulation time
     sim_time_err = pdconcat(sim_time_err, axis=1, keys=cases)
-    sim_time_err.to_csv(workdir.joinpath("output", "sim-time-errors.csv"))
+    sim_time_err.to_csv(workdir.joinpath("outputs", "sim-time-errors.csv"))
 
-    # concat and export errors wrt simulation time
-    wall_time_err = pdconcat(wall_time_err, axis=1, keys=cases)
-    wall_time_err.to_csv(workdir.joinpath("output", "wall-time-errors.csv"))
+    # # initialize a data holder for errors vs iteration/wall-time
+    # wall_time_err = []
+
+    # # process error v.s. wall time wrt. different model parameters during training
+    # for job in cases:
+    #     # errors wrt iterations/wall-time
+    #     cfg.eval_times = [2, 8, 32]
+    #     wall_time_err.append(get_error_vs_walltime(cfg, jobdir, fields))
+
+    # # concat and export errors wrt simulation time
+    # wall_time_err = pdconcat(wall_time_err, axis=1, keys=cases)
+    # wall_time_err.to_csv(workdir.joinpath("output", "wall-time-errors.csv"))
 
 
 if __name__ == "__main__":
