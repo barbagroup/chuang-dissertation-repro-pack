@@ -1,19 +1,20 @@
 #! /bin/sh
 #
 # job.sh
-# Copyright (C) 2022 Pi-Yueh Chuang <pychuang@pm.me>
+# Copyright (C) 2022 Pi-Yueh Chuang <pychuang@gwu.me>
 #
 # Distributed under terms of the BSD 3-Clause license.
 #
 
 #SBATCH --job-name="2D Cylinder Re40"
 #SBATCH --nodes=1
-#SBATCH --gpus=8
-#SBATCH --cpus-per-gpu 32
+#SBATCH --gpus=1
+#SBATCH --cpus-per-gpu=32
 #SBATCH --partition=dgxa100_80g_2tb
+#SBATCH --exclude dgx1-[000-002,004]
 #SBATCH --time=0-04:00:00
-#SBATCH --output=logs/slurm-%A_%a.out
-#SBATCH --array=1-8%1  # submit this job 8 times but only run 1 at a time
+#SBATCH --output=slurm-%A_%a.out
+#SBATCH --array=1-6%1  # submit this job 6 times but only run 1 at a time
 
 
 # get the path to this script (method depending on whether using Slurm)
