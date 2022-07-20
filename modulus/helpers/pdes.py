@@ -24,7 +24,7 @@ class IncompNavierStokes(_PDES):
     """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, nu, rho, dim=2, time=True):  # pylint: disable=super-init-not-called
+    def __init__(self, nu, rho, dim=2, unsteady=True):  # pylint: disable=super-init-not-called
         # pylint: disable=not-callable
         assert isinstance(nu, (_ScalarType, _Expr, str)), f"Wrong type. Got {type(nu)}"
         assert isinstance(rho, (_ScalarType, _Expr, str)), f"Wrong type. Got {type(rho)}"
@@ -41,7 +41,7 @@ class IncompNavierStokes(_PDES):
         invars = xyz[:dim]
 
         # independent variables also depend on whether it's a steady or unsteady problem
-        if time:
+        if unsteady:
             invars.append(time)
 
         # process kinematic viscosity depending on the type of nu
@@ -172,3 +172,43 @@ class VelocityGradients(_PDES):
             "w_y": uvw[2].diff(xyz[1]),
             "w_z": uvw[2].diff(xyz[2]),
         }
+
+
+class ConvectiveBC(_PDES):
+    """Ref: Modulus 2d_wave_equation example.
+    """
+
+    name = "ConvectiveBC"
+
+    def __init__(self, u, c, eqname, dim=2, unsteady=True):  # pylint: disable=super-init-not-called
+        # pylint: disable=not-callable
+        assert isinstance(c, (_ScalarType, _Expr, str)), f"Wrong type. Got {type(c)}"
+        assert type(u) == str, "u needs to be string"
+        assert type(eqname) == str, "eqname needs to be string"
+        assert dim in [1, 2, 3], f"Illegal dimension: {dim}"
+
+        # initialize symbols
+        x, y, z, t = _symbols("x, y, z, t")
+        nx, ny, nz = list(_symbols("normal_x, normal_y, normal_z"))
+
+        # actual independent variables depend on problem's dimension
+        invars = [x, y, z][:dim]
+
+        # independent variables also depend on whether it's a steady or unsteady problem
+        if unsteady:
+            invars.append(t)
+
+        # process wave speed
+        if isinstance(c, str):
+            self.c = _Function(c)(*invars)
+        elif isinstance(c, _ScalarType):
+            self.c = _Number(c)
+        else:
+            self.c = c
+
+        # scalar function
+        u = _Function(u)(*invars)
+
+        # set equations
+        self.equations = {}
+        self.equations[eqname] = u.diff(t) + nx * c * u.diff(x) + ny * c * u.diff(y) + nz * c * u.diff(z)
