@@ -50,10 +50,16 @@ class SaveModelInferencer(_Inferencer):
 
         with _io.BytesIO() as mem:
             if hasattr(self.model, "module"):
-                _torch.jit.save(self.model.module, mem)
+                target = self.model.module
             else:
-                _torch.jit.save(self.model, mem)
-            mem.seek(0)
+                target = self.model
+
+            if hasattr(target, "save_to_buffer"):
+                _torch.jit.save(target, mem)
+            else:  # i.e., no JIT
+                _torch.save(target, mem)
+
+            mem.seek(0)  # rewind
 
             with _lzma.open(filename, "wb") as fobj:
                 _torch.save({"step": step, "time": time, "model": mem.read()}, fobj)
