@@ -11,6 +11,7 @@
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
 from modulus.hydra.scheduler import SchedulerConf as _SchedulerConf
+from modulus.hydra.config import MISSING as _MISSING
 
 
 @dataclass
@@ -27,6 +28,31 @@ class ReduceLROnPlateauConf(_SchedulerConf):
     verbose: bool = False
 
 
+@dataclass
+class StepLRConf(_SchedulerConf):
+    _target_: str = "torch.optim.lr_scheduler.StepLR"
+    step_size: int = _MISSING
+    gamma: float = 0.1
+    last_epoch: int = -1
+    verbose: bool = False
+
+
+@dataclass
+class CyclicLRConf(_SchedulerConf):
+    _target_: str = "torch.optim.lr_scheduler.CyclicLR"
+    base_lr: float = _MISSING
+    max_lr: float = _MISSING
+    step_size_up: int = 2000
+    step_size_down: int = 2000
+    mode: str = "triangular"
+    gamma: float = 1.0
+    cycle_momentum: bool = True
+    base_momentum: float = 0.8
+    max_momentum: float = 0.9
+    last_epoch: int = -1
+    verbose: bool = False
+
+
 def register_scheduler_configs() -> None:
     """Register for custom learning rate scheduler.
     """
@@ -34,4 +60,16 @@ def register_scheduler_configs() -> None:
         group="scheduler",
         name="ReduceLROnPlateau",
         node=ReduceLROnPlateauConf,
+    )
+
+    ConfigStore.instance().store(
+        group="scheduler",
+        name="StepLR",
+        node=StepLRConf,
+    )
+
+    ConfigStore.instance().store(
+        group="scheduler",
+        name="CyclicLR",
+        node=CyclicLRConf,
     )

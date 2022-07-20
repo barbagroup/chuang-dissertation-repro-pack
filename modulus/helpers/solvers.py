@@ -100,15 +100,19 @@ class SolverBase:
         self.step = -1
         self.initial_step = -1
 
-        # make logger and tensorboard writer
-        self.log = _logging.getLogger(__name__)
-        self.writer = _torch.utils.tensorboard.SummaryWriter(self.network_dir, purge_step=self.summary_freq+1)
-
         # Set distributed manager
         self.manager = _DistributedManager()
 
         # set device
         self.device = self.manager.device
+
+        # make logger and tensorboard writer
+        self.log = _logging.getLogger(__name__)
+
+        if self.rank == 0:
+            self.writer = _torch.utils.tensorboard.SummaryWriter(self.network_dir, purge_step=self.summary_freq+1)
+        else:
+            self.writer = None  # will cause error if non-zero ranks try to use tensorboard writer
 
         # create global model for restoring and saving
         self.saveable_models = self.domain.get_saveable_models()
