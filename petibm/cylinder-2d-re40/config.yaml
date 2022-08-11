@@ -17,37 +17,37 @@ flow:
 
 mesh:
   - direction: x
-    start: -15.0
+    start: -10.0
     subDomains:
-      - end: -0.6
-        cells: 69
-        stretchRatio: 0.952380952
-      - end: 0.6
-        cells: 48
+      - end: -0.75
+        cells: 186
+        stretchRatio: 0.991332611050921
+      - end: 0.75
+        cells: 75
         stretchRatio: 1.0
-      - end: 15.0
-        cells: 69
-        stretchRatio: 1.05
+      - end: 30.0
+        cells: 301
+        stretchRatio: 1.008743169398907
 
   - direction: y
-    start: -15.0
+    start: -10.0
     subDomains:
-      - end: -0.6
-        cells: 69
-        stretchRatio: 0.952380952
-      - end: 0.6
-        cells: 48
+      - end: -0.75
+        cells: 186
+        stretchRatio: 0.991332611050921 
+      - end: 0.75
+        cells: 75
         stretchRatio: 1.0
-      - end: 15.0
-        cells: 69
-        stretchRatio: 1.05
+      - end: 10.0
+        cells: 186
+        stretchRatio: 1.008743169398907
 
 parameters:
   dt: 0.01
   startStep: 0
-  nt: 2000
-  nsave: 2000
-  nrestart: 2000
+  nt: 20000
+  nsave: 2500
+  nrestart: 5000
   convection: ADAMS_BASHFORTH_2
   diffusion: CRANK_NICOLSON
   velocitySolver:
@@ -61,5 +61,17 @@ parameters:
     config: config/forces_solver.info
 
 bodies:
-  - type: points
-    file: circle.body
+- type: points
+  name: cylinder
+  file: cylinder.body
+
+probes:
+- name: probe-p
+  type: VOLUME
+  field: p
+  viewer: hdf5
+  path: probe-p.h5
+  n_sum: 1000
+  box:
+    x: [-0.75, 0.75]
+    y: [-0.75, 0.75]
