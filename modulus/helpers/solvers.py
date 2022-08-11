@@ -10,6 +10,7 @@
 """
 import logging as _logging
 import pathlib as _pathlib
+import shutil as _shutil
 import time as _time
 import torch as _torch
 from lzma import open as _lzmaopen
@@ -80,6 +81,7 @@ class SolverBase:
     max_steps = property(lambda self: self.cfg.training.max_steps)
     grad_agg_freq = property(lambda self: self.cfg.training.grad_agg_freq)
     save_network_freq = property(lambda self: self.cfg.training.save_network_freq)
+    backup_checkpoint_freq = property(lambda self: self.cfg.training.backup_checkpoint_freq)
     print_stats_freq = property(lambda self: self.cfg.training.print_stats_freq)
     summary_freq = property(lambda self: self.cfg.training.summary_freq)
     amp = property(lambda self: self.cfg.training.amp)
@@ -249,6 +251,34 @@ class SolverBase:
                 },
                 self.network_dir+"/optim_checkpoint.pth",
             )
+
+            self.log.info(msg.format(self.step, _add_hydra_run_path(self.network_dir)))
+
+        # wait if necessarry
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
+    def backup_checkpoint(self, force=False):
+        """Back up checkpoint files using the current step as the file extensions.
+        """
+
+        # no need to backup checkpoints
+        if self.step % self.backup_checkpoint_freq != 0 and not force:
+            return
+
+        msg = _colored("[step: {:10d}] backed up checkpoint to {}", "green")
+
+        if self.rank == 0:
+            # make copies of model checkpoints
+            for model in self.saveable_models:
+                _shutil.copyfile(
+                    self.network_dir+f"/{model.checkpoint_filename}",
+                    self.network_dir+f"/{model.checkpoint_filename}.{self.step}")
+
+            # make copies of checkpoints
+            _shutil.copyfile(
+                self.network_dir+"/optim_checkpoint.pth",
+                self.network_dir+f"/optim_checkpoint.pth.{self.step}")
 
             self.log.info(msg.format(self.step, _add_hydra_run_path(self.network_dir)))
 
@@ -479,6 +509,7 @@ class AdamNCGSWA(SolverBase):
         self._log_stdout(loss, timer)
         self._log_tensorboard(tbtimer)
         self.save_checkpoint()
+        self.backup_checkpoint()
 
         # stage 1: Adam solver
         self._adam_solve()
@@ -530,9 +561,11 @@ class AdamNCGSWA(SolverBase):
             self._log_stdout(loss, timer)
             self._log_tensorboard(tbtimer)
             self.save_checkpoint()
+            self.backup_checkpoint()  # back up the checkpoint
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
+            self.backup_checkpoint(True)  # back up the checkpoint
 
     def _adamswa_solve(self):
         """Stage 2: solve with Adam + SWA.
@@ -573,6 +606,7 @@ class AdamNCGSWA(SolverBase):
             self._log_stdout(loss, timer)
             self._log_tensorboard(tbtimer)
             self.save_checkpoint()
+            self.backup_checkpoint()  # back up the checkpoint
         else:
             self.initial_step = self.step
 
@@ -581,6 +615,7 @@ class AdamNCGSWA(SolverBase):
                 p_model.detach().copy_(p_swa.detach().clone())
 
             self.save_checkpoint(True)  # force writing a checkpoint
+            self.backup_checkpoint(True)  # back up the checkpoint
 
             # remove swa_model
             self.log.info(f"[Rank {self.rank:2d}] " + _colored("Deleting AdamSWA's SWA model.", "blue"))
@@ -617,9 +652,11 @@ class AdamNCGSWA(SolverBase):
             self._log_stdout(loss, timer)
             self._log_tensorboard(tbtimer)
             self.save_checkpoint()
+            self.backup_checkpoint()  # back up the checkpoint
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
+            self.backup_checkpoint(True)  # back up the checkpoint
 
     def _ncgswa_solve(self):
         """Stage 4: Solve with Nonlinear CG + SWA.
@@ -656,9 +693,11 @@ class AdamNCGSWA(SolverBase):
             self._log_stdout(loss, timer)
             self._log_tensorboard(tbtimer)
             self.save_checkpoint()
+            self.backup_checkpoint()  # back up the checkpoint
         else:
             self.initial_step = self.step
             self.save_checkpoint(True)  # force writing a checkpoint
+            self.backup_checkpoint(True)  # back up the checkpoint
 
     def _create_optimizers(self, step: int = 0):
 
@@ -707,6 +746,7 @@ class AdamNCGSWA(SolverBase):
         self.cfg.training.rec_monitor_freq = target.rec_monitor_freq
         self.cfg.training.rec_constraint_freq = target.rec_constraint_freq
         self.cfg.training.save_network_freq = target.save_network_freq
+        self.cfg.training.backup_checkpoint_freq = target.backup_checkpoint_freq
         self.cfg.training.print_stats_freq = target.print_stats_freq
         self.cfg.training.summary_freq = target.summary_freq
 
@@ -746,6 +786,29 @@ class AdamNCGSWA(SolverBase):
             _torch.save(self.swa_model.state_dict(), filename)
             msg = _colored("[step: {:10d}] saved swa-model checkpoint to {}", "green")
             self.log.info(msg.format(self.step, filename))
+
+        # wait if necessarry
+        if self.manager.distributed:
+            _torch.distributed.barrier(device_ids=[self.manager.local_rank] if self.manager.cuda else None)
+
+    def backup_checkpoint(self, force=False):
+        """Back up checkpoint files using the current step as the file extensions.
+        """
+
+        # no need to backup checkpoint
+        if self.step % self.backup_checkpoint_freq != 0 and not force:
+            return
+
+        # back up usual things
+        SolverBase.backup_checkpoint(self)
+
+        # backup swa model
+        if self.rank == 0 and self.swa_model is not None:
+            filename = _pathlib.Path(self.network_dir).joinpath("swa-model.pth")
+            new_filename = filename.with_suffix(f"{filename.suffix}.{self.step}")
+            _shutil.copyfile(filename, new_filename)
+            msg = _colored("[step: {:10d}] backed up swa-model checkpoint to {}", "green")
+            self.log.info(msg.format(self.step, new_filename))
 
         # wait if necessarry
         if self.manager.distributed:
@@ -829,13 +892,18 @@ class AdamNCGSWAConf(_OptimizerConf):
 
 
 @dataclass
-class AdamNCGSWATrainingConf(_DefaultTraining):
+class DefaultTrainingWBackup(_DefaultTraining):
+    backup_checkpoint_freq: int = 1000
+
+
+@dataclass
+class AdamNCGSWATrainingConf(DefaultTrainingWBackup):
     """Training control for Adam-CG-Conf stragety.
     """
-    adam: _DefaultTraining = _DefaultTraining()
-    adamswa: _DefaultTraining = _DefaultTraining()
-    ncg: _DefaultTraining = _DefaultTraining()
-    ncgswa: _DefaultTraining = _DefaultTraining()
+    adam: _DefaultTraining = DefaultTrainingWBackup()
+    adamswa: _DefaultTraining = DefaultTrainingWBackup()
+    ncg: _DefaultTraining = DefaultTrainingWBackup()
+    ncgswa: _DefaultTraining = DefaultTrainingWBackup()
 
 
 def register_optimizer_configs() -> None:

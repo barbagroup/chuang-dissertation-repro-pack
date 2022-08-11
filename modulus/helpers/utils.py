@@ -46,12 +46,18 @@ def read_tensorboard_data(workdir: pathlib.Path):
 
         keymap = {
             "Train/loss_aggregated": "loss",
+            "Train/time_elapsed": "elapsed",  # originally in milliseconds
             "Monitors/pde_residual/continuity_res": "cont_res",
             "Monitors/pde_residual/momentum_x_res": "momem_x_res",
             "Monitors/pde_residual/momentum_y_res": "momem_y_res",
             "Monitors/pde-residual/continuity_res": "cont_res",  # underscore was replaced by hyphen at some point
             "Monitors/pde-residual/momentum_x_res": "momem_x_res",  # underscore was replaced by hyphen at some point
             "Monitors/pde-residual/momentum_y_res": "momem_y_res",  # underscore was replaced by hyphen at some point
+            "Monitors/pde-residual/continuity": "cont_res",  # _res was removed in some cases
+            "Monitors/pde-residual/momentum_x": "momem_x_res",  # _res was removed in some cases
+            "Monitors/pde-residual/momentum_y": "momem_y_res",  # _res was removed in some cases
+            'Monitors/noslip-residual/cylinder_u': "cylinder_u",
+            'Monitors/noslip-residual/cylinder_v': "cylinder_v",
         }
 
         frame = pandas.DataFrame()
@@ -79,6 +85,9 @@ def read_tensorboard_data(workdir: pathlib.Path):
     # concatenate (and sort) all partial individual dataframes
     data = pandas.concat(data).reset_index(drop=False)
     data = data.drop_duplicates("step", keep="first").set_index("step").sort_index()
+
+    # convert elapsed time to run time
+    data["run_time"] = data["elapsed"].cumsum() / 1000  # also convert from milliseconds to seconds
 
     return data
 
