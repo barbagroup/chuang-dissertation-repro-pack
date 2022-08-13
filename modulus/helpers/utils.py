@@ -12,6 +12,7 @@ import io
 import pathlib
 import pandas
 import lzma
+import re
 from sympy import sympify as _sympify
 from tensorboard.backend.event_processing import event_accumulator
 from torch import load
@@ -165,7 +166,7 @@ def create_graph(cfg, dim=2, unsteady=True, params=None):
         outkeys = ["u", "v", "w", "p"]
     else:
         raise ValueError(f"Incorrect value for dim: {dim}")
-    
+
     # temporal variable
     if unsteady:
         inkeys.append("t")
@@ -271,11 +272,20 @@ def get_graph_from_file(cfg, filename, dim=2, unsteady=True, device="cpu"):
     return step, timestamp, graph, dtype
 
 
-def get_graph_from_checkpoint(cfg, filename, dim=2, unsteady=True, device="cpu"):
+def get_graph_from_checkpoint(cfg, filename, dim=2, unsteady=True, mtype="raw", device="cpu"):
     """Return a computational with model parameters read from a checkpoint file.
     """
 
-    model = load(filename, map_location=device)    
+    if mtype == "raw":
+        model = load(filename, map_location=device)
+    elif mtype == "swa":
+        data = load(filename, map_location=device)
+        model = {}
+        for key, val in data.items():
+            result = re.search(r"module.0.([\w\.]+)", key)
+            if result is None:
+                continue
+            model[result.group(1)] = val
 
     # get a computational graph
     graph, dtype = create_graph(cfg, dim, unsteady, model)
