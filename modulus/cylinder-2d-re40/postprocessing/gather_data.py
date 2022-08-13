@@ -31,8 +31,8 @@ for parent in pathlib.Path(__file__).resolve().parents:
 else:
     raise FileNotFoundError("Couldn't find module `helpers`.")
 
-# %%
-def get_casedata(workdir, casename, model, rank=0):
+
+def get_casedata(workdir, casename, mtype, rank=0):
     """Based on the type of a case, use different ways to load cfg and graph.
     """
 
@@ -42,7 +42,8 @@ def get_casedata(workdir, casename, model, rank=0):
     # cases solving steady N-S equation
     steadycases = [
         "from-example", "mocking-example", "mocking-example-conv-out", "mocking-example-cyclic",
-        "mocking-example-conv-out-cyclic", "nl5-nn128-npts81920-nosdf-steady"
+        "mocking-example-conv-out-cyclic", "nl5-nn128-npts81920-nosdf-steady",
+        "nl6-nn512-npts6400-steady"
     ]
 
     # files, directories, and paths
@@ -72,12 +73,12 @@ def get_casedata(workdir, casename, model, rank=0):
         cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
 
         # will get the computational graph from the latest checkpoint
-        if model == "raw":
+        if mtype == "raw":
             modelfile = datadir.joinpath("flow-net.pth")
-        elif model == "swa":
+        elif mtype == "swa":
             modelfile = datadir.joinpath("swa-model.pth")
         else:
-            raise ValueError(f"Unknown model type: {model}")
+            raise ValueError(f"Unknown model type: {mtype}")
 
     # extra configurations
     cfg.device = "cpu"
@@ -91,7 +92,7 @@ def get_casedata(workdir, casename, model, rank=0):
 
     # get the computational graph from file
     print(f"[Rank {rank}] Reading model from {modelfile.name}")
-    graph, dtype = get_graph_from_checkpoint(cfg, modelfile, dim=2, unsteady=unsteady, device="cpu")
+    graph, dtype = get_graph_from_checkpoint(cfg, modelfile, dim=2, unsteady=unsteady, mtype=mtype, device="cpu")
 
     # put everything to a single data object
     out = OmegaConf.create({
@@ -102,7 +103,7 @@ def get_casedata(workdir, casename, model, rank=0):
 
     return out, graph
 
-# %%
+
 def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-locals
     """Get snapshots data.
     """
@@ -153,7 +154,7 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
 
     return snapshots
 
-# %%
+
 def cd_cl_kernel(norms, data, radius, nu):
     """Kernel for calculating C_D and C_L (also the viscosity and pressure effects).
     """
@@ -187,7 +188,7 @@ def cd_cl_kernel(norms, data, radius, nu):
 
     return cdv, cdp, cd, clv, clp, cl
 
-# %%
+
 def get_drag_lift_coefficients(casedata, graph, rank=0):
     """Get drag and lift coefficients.
     """
@@ -266,7 +267,7 @@ def get_drag_lift_coefficients(casedata, graph, rank=0):
 
     return out
 
-# %%
+
 def get_surface_pressure_coefficients(casedata, graph, rank=0):
     """Get pressure coefficients on the cylinder surface.
     """
@@ -333,7 +334,7 @@ def get_surface_pressure_coefficients(casedata, graph, rank=0):
 
     return {"degrees": theta*180./numpy.pi, "cp": (preds["p"]-pref)*2}
 
-# %%
+
 def process_single_case(
     workdir, casename, mtype, snapshots=True, coeffs=True, surfp=True, rank=0
 ):  # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
@@ -349,7 +350,7 @@ def process_single_case(
 
     # files, directories, and paths
     workdir.joinpath("outputs").mkdir(exist_ok=True)
-    h5filename = workdir.joinpath("outputs", casename).with_suffix(".h5")
+    h5filename = workdir.joinpath("outputs", f"{casename}-{mtype}.h5")
 
     # get configuration, computational graph, and misc. parameters
     casedata, graph = get_casedata(workdir, casename, mtype, rank)
@@ -410,7 +411,7 @@ def process_single_case(
 
     return 0
 
-# %%
+
 def worker(inpq: multiprocessing.JoinableQueue, rank: int):
     """Thread worker."""
     while True:
@@ -419,12 +420,11 @@ def worker(inpq: multiprocessing.JoinableQueue, rank: int):
         inpq.task_done()
 
 
-# %% main function
 if __name__ == "__main__":
     import os
 
     os.environ["OMP_NUM_THREADS"] = "4"  # limit threads per process
-    ctx = multiprocessing.get_context('fork') # specific spawing method
+    ctx = multiprocessing.get_context('fork')  # specific spawing method
 
     # point workdir to the correct folder
     topdir = projdir.joinpath("cylinder-2d-re40")
@@ -433,20 +433,12 @@ if __name__ == "__main__":
     inps = ctx.JoinableQueue()
 
     # steady cases
-    inps.put((topdir, "from-example", "raw", False, False, False))
-    inps.put((topdir, "mocking-example", "raw", False, False, False))
-    inps.put((topdir, "mocking-example-conv-out", "raw", True, True, True))
-    inps.put((topdir, "mocking-example-conv-out-cyclic", "raw", True, True, True))
-    inps.put((topdir, "mocking-example-cyclic", "raw", True, True, True))
-    inps.put((topdir, "nl5-nn128-npts81920-nosdf-steady", "raw", True, True, True))
-
-    # unsteady cases
-    inps.put((topdir, "from-example-unsteady", "raw", False, False, False))
-    inps.put((topdir, "nl5-nn128-npts81920", "raw", False, False, False))
-    inps.put((topdir, "nl5-nn128-npts81920-nosdf", "raw", True, True, True))
-    inps.put((topdir, "nl5-nn256-npts81920", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn128-npts81920-nosdf", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn256-npts81920-nosdf", "raw", True, True, True))
+    inps.put((topdir, "mocking-example-conv-out-cyclic", "raw", False, False, False))
+    inps.put((topdir, "mocking-example-conv-out-cyclic", "swa", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "swa", True, True, True))
 
     # spawning processes
     procs = []

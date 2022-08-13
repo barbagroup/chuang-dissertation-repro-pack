@@ -1,0 +1,86 @@
+defaults :
+  - modulus_default
+  - arch: [fully_connected,]
+  - scheduler: CyclicLR
+  - optimizer: adamswa-ncgswa
+  - loss: sum
+  - override training: adamswa-ncgswa
+  - _self_
+
+jit: True
+
+save_filetypes: npz
+
+debug: false
+
+arch:
+  fully_connected:
+    layer_size: 512
+    nr_layers: 6
+
+scheduler:
+  base_lr: 1.0e-6
+  max_lr: 1.0e-3
+  step_size_up: 2000
+  step_size_down: 2000
+  cycle_momentum: False
+  mode: "exp_range"
+  gamma: 0.999972
+
+optimizer:
+  adam:
+    lr: 1.0e-3
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+    amsgrad: False
+
+  adamswa:
+    lr: 1.0e-3
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+    amsgrad: False
+
+training:
+  adam:
+    max_steps : 200000
+    rec_results_freq : 1000
+    rec_constraint_freq: 10000
+    rec_inference_freq: 10000
+    summary_freq: 100
+    save_network_freq: 10000
+    backup_checkpoint_freq: 10000
+
+  adamswa:
+    max_steps : 200000
+    rec_results_freq : 1000
+    rec_constraint_freq: 10000
+    rec_inference_freq: 10000
+    summary_freq: 100
+    save_network_freq: 1000
+    backup_checkpoint_freq: 10000
+
+  ncg:
+    max_steps : 0
+
+  ncgswa:
+    max_steps : 0
+
+batch_size:
+  nbatches: 10000
+  nbcx: 640
+  nbcy: 640
+  nic: 6400
+  ncylinder: 256
+  npts: 6400
+
+custom:
+  x: [-10.0, 30.0]
+  y: [-10.0, 10.0]
+  t: [0., 20.]
+  radius: 0.5
+  nu: 0.025
+  rho: 1.0
+  uic: 1.0
+  activation: silu
