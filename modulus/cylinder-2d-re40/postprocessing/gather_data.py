@@ -433,8 +433,6 @@ if __name__ == "__main__":
     inps = ctx.JoinableQueue()
 
     # steady cases
-    inps.put((topdir, "mocking-example-conv-out-cyclic", "raw", False, False, False))
-    inps.put((topdir, "mocking-example-conv-out-cyclic", "swa", False, False, False))
     inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", True, True, True))
     inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", True, True, True))
     inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", True, True, True))
