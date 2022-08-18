@@ -25,7 +25,7 @@ for nl in [1, 2, 3]:
                     data = fobj.readlines()
 
                 for line in data[-10:]:
-                    if "finished training" in line:
+                    if "[step:     400000] finished training!" in line:
                         finished = True
                         break
 

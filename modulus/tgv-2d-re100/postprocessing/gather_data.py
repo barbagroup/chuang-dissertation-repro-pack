@@ -97,6 +97,7 @@ def get_casedata(casedir, mtype, rank=0):
     cfg.eval_times = [0., 40., 80.]
     cfg.nx = 512  # number of cells in x direction
     cfg.ny = 512  # number of cells in y direction
+    cfg.nt = 100  # number of cells in y direction
 
     # whether the model and graph should have the variable `t`
     unsteady = True
@@ -161,6 +162,70 @@ def get_snapshots(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disa
             grp.create_dataset(f"err-{field}", data=err, **h5kwargs)
 
         h5file.flush()
+
+    return h5file
+
+
+def get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disable=too-many-locals
+    """Get err versus simulation time and write to a HDF5 group immediately to save memory.
+    """
+
+    xbg, xed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
+    tbg, ted = process_domain(cfg.custom.t)
+    ncells =  cfg.nx * cfg.ny * cfg.nt # number of spatial-temporal cells
+
+    # get a subset in the computational graph that gives us desired quantities
+    model = Graph(graph, Key.convert_list(["x", "y", "t"]), Key.convert_list(fields))
+    dtype = next(model.parameters()).dtype
+
+    # spatial-temporal gridlines (vertices)
+    npx = numpy.linspace(xbg, xed, cfg.nx+1)
+    npy = numpy.linspace(ybg, yed, cfg.ny+1)
+    npt = numpy.linspace(tbg, ted, cfg.nt+1 )
+
+    # spatial-temporal gridlines (cell centers)
+    npx = (npx[1:] + npx[:-1]) / 2
+    npy = (npy[1:] + npy[:-1]) / 2
+    npt = (npt[1:] + npt[:-1]) / 2
+
+    # spatial-temporal mesh
+    npx, npy, npt = numpy.meshgrid(npx, npy, npt)
+    npx, npy, npt = npx.reshape(-1, 1), npy.reshape(-1, 1), npt.reshape(-1, 1)
+
+    # batching
+    nbs = 65536
+    nb = npx.size // 65536 + int(bool(npx.size % 65536))
+
+    # tensor props; don't need vorticity here, so no need for autograd
+    kwargs = {"dtype": dtype, "device": cfg.device, "requires_grad": False}
+
+    print(f"[Rank {rank}] Predicting spatial-temporal errors")
+    l1norms = {k: 0.0 for k in fields}
+    l2norms = {k: 0.0 for k in fields}
+    for i in range(nb):
+        bg, ed = i * nbs, (i + 1) * nbs  # ed will > the actual size, but numpy is smart enough
+        invars = {
+            "x": torch.tensor(npx[bg:ed], **kwargs),
+            "y": torch.tensor(npy[bg:ed], **kwargs),
+            "t": torch.tensor(npt[bg:ed], **kwargs),
+        }
+        preds = model(invars)
+        preds = {k: v.detach().cpu().numpy() for k, v in preds.items()}
+
+        for field in fields:
+            ans = analytical_solution(npx[bg:ed], npy[bg:ed], npt[bg:ed], 0.01, field)
+            err = abs(preds[field]-ans)
+            l1norms[field] += err.sum()
+            l2norms[field] += (err**2).sum()
+
+    for field in fields:
+        l1norm = l1norms[field] / ncells
+        l2norm = numpy.sqrt(l2norms[field] / ncells)
+        h5file.create_dataset(f"sterrs/{field}/l1norm", data=l1norm)
+        h5file.create_dataset(f"sterrs/{field}/l2norm", data=l2norm)
+
+    h5file.flush()
 
     return h5file
 
@@ -300,13 +365,21 @@ def get_walltime_errs(cfg, graph, fields, mtype, h5file, h5kwargs, rank=0):  # p
 
 
 def process_single_case(
-    workdir, casedir, mtype, snapshots=True, simtimeerr=True, walltimeerr=True, rank=0
+    workdir, casedir, mtype,
+    snapshots=True, simtimeerr=True, walltimeerr=True, sterrs=True,
+    rank=0
 ):  # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
     """Deal with one single case.
     """
 
+    def _del_key(key):
+        try:
+            del h5file[key]
+        except KeyError:
+            pass
+
     # determine file mode
-    fmode = "w" if all([snapshots, simtimeerr, walltimeerr]) else "a"
+    fmode = "w" if all([snapshots, simtimeerr, walltimeerr, sterrs]) else "a"
 
     # files, directories, and paths
     casename = casedir.name
@@ -315,7 +388,7 @@ def process_single_case(
     h5filename = workdir.joinpath("outputs", midpath, f"{casename}-{mtype}.h5")
 
     # nothing to do
-    if not any([snapshots, simtimeerr, walltimeerr]):
+    if not any([snapshots, simtimeerr, walltimeerr, sterrs]):
         print(f"[Rank {rank}] Nothing to do with {casename}. Skipping.")
         return 0
 
@@ -331,35 +404,25 @@ def process_single_case(
 
         if snapshots:
             fields = ["u", "v", "p", "vorticity_z"]  # fields of our interest
-
-            try:
-                del h5file["fields"]
-            except KeyError:
-                pass
-
+            _del_key("field")
             h5file = get_snapshots(cfg, graph, fields, h5file, h5kwargs, rank)
 
         if simtimeerr:
             fields = ["u", "v"]  # fields of our interest
             cfg.eval_times = list(map(float, numpy.linspace(0., 80., 81)))
-
-            try:
-                del h5file["simtime"]
-            except KeyError:
-                pass
-
+            _del_key("simtime")
             h5file = get_simtime_errs(cfg, graph, fields, h5file, h5kwargs, rank)
 
         if walltimeerr:
             fields = ["u", "v"]  # fields of our interest
             cfg.eval_times = [0., 40., 80.]
-
-            try:
-                del h5file["walltime"]
-            except KeyError:
-                pass
-
+            _del_key("walltime")
             h5file = get_walltime_errs(cfg, graph, fields, mtype, h5file, h5kwargs, rank)
+
+        if sterrs:
+            fields = ["u", "v"]  # fields of our interest
+            _del_key("sterrs")
+            h5file = get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank)
 
     return 0
 
@@ -392,7 +455,7 @@ if __name__ == "__main__":
     for nl, nn, nbs, mtype in itertools.product(layers, neurons, nbss, mtypes):
         inps.put((
             topdir, topdir.joinpath("base-cases", f"nl{nl}-nn{nn}-npts{nbs}"),
-            mtype, True, True, True
+            mtype, True, True, True, True
         ))
 
     # # other tests
