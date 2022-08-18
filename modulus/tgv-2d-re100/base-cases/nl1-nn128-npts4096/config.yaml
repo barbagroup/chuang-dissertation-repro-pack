@@ -1,0 +1,64 @@
+# vim: ft=yaml
+defaults :
+  - modulus_default
+  - arch: [fully_connected,]
+  - scheduler: tf_exponential_lr
+  - optimizer: adamswa-ncgswa
+  - loss: sum
+  - override training: adamswa-ncgswa
+  - _self_
+
+jit: true
+
+save_filetypes: npz
+
+debug: false
+
+arch:
+  fully_connected:
+    layer_size: 128
+    nr_layers: 1
+
+scheduler:
+  decay_rate: 0.95
+  decay_steps: 5000
+
+optimizer:
+  adam:
+    lr: 1.0e-3
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+    amsgrad: False
+
+training:
+  adam:
+    max_steps : 400000
+    rec_results_freq : 1000
+    rec_constraint_freq: 10000
+    rec_inference_freq: 10000
+    summary_freq: 100
+    save_network_freq: 10000
+    backup_checkpoint_freq: 10000
+
+  adamswa:
+    max_steps : 0
+
+  ncg:
+    max_steps : 0
+
+  ncgswa:
+    max_steps : 0
+
+batch_size:
+  nbatches: 10000
+  npts: 4096
+
+custom:
+  x: [-pi, pi]
+  y: [-pi, pi]
+  t: [0., 100.]
+  periodic: ["x", "y"]
+  nu: 0.01
+  rho: 1.0
+  activation: silu
