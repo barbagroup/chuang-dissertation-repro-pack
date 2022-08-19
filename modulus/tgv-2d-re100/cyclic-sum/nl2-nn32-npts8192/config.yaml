@@ -16,8 +16,8 @@ debug: false
 
 arch:
   fully_connected:
-    layer_size: 128
-    nr_layers: 3
+    layer_size: 32
+    nr_layers: 2
 
 scheduler:
   mode: "exp_range"

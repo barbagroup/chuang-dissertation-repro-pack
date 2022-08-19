@@ -8,7 +8,7 @@
 
 #SBATCH --job-name="TGV100"
 #SBATCH --nodes=1
-#SBATCH --gpus=2
+#SBATCH --gpus=1
 #SBATCH --cpus-per-gpu=32
 #SBATCH --partition=dgxa100_80g_2tb
 #SBATCH --exclude dgx1-[000-002,004]

@@ -16,8 +16,8 @@ debug: false
 
 arch:
   fully_connected:
-    layer_size: 128
-    nr_layers: 3
+    layer_size: 16
+    nr_layers: 1
 
 scheduler:
   decay_rate: 0.95

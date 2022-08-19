@@ -8,6 +8,7 @@
 
 """Create cases
 """
+# pylint: disable=unspecified-encoding, invalid-name
 import pathlib
 import itertools
 
@@ -120,22 +121,23 @@ def create_exp_annealing_scaling(workdir, force=False):
     with open(workdir.joinpath("templates", "no-singularity.sh.temp"), "r") as fobj:
         noslurm_sh = fobj.read()
 
-    for ngpus in [1, 2, 4, 8]:
-        path = workdir.joinpath("exp-annealing-scaling", f"nl3-nn128-npts8192-ngpus{ngpus}")
+    options = [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]
+    for (nl, nn, npts) in options:
+        path = workdir.joinpath("exp-annealing", f"nl{nl}-nn{nn}-npts{npts}")
 
         if not path.is_dir() or force:
             path.mkdir(parents=True, exist_ok=True)
 
         _copy(
             path.joinpath("config.yaml"), config_yaml, force,
-            {"nr_layers": 3, "layer_size": 128, "npts": 8192}
+            {"nr_layers": nl, "layer_size": nn, "npts": npts}
         )
 
         _copy(path.joinpath("main.py"), main_py, force, None)
 
         _copy(
             path.joinpath("job.sh"), job_sh, force,
-            {"ngpus": ngpus, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
+            {"ngpus": 1, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
         )
 
         _copy(path.joinpath("no-singularity.sh"), noslurm_sh, force, None)
@@ -157,22 +159,23 @@ def create_cyclic_sum_scaling(workdir, force=False):
     with open(workdir.joinpath("templates", "no-singularity.sh.temp"), "r") as fobj:
         noslurm_sh = fobj.read()
 
-    for ngpus in [1, 2, 4, 8]:
-        path = workdir.joinpath("cyclic-sum-scaling", f"nl3-nn128-npts8192-ngpus{ngpus}")
+    options = [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]
+    for (nl, nn, npts) in options:
+        path = workdir.joinpath("cyclic-sum", f"nl{nl}-nn{nn}-npts{npts}")
 
         if not path.is_dir() or force:
             path.mkdir(parents=True, exist_ok=True)
 
         _copy(
             path.joinpath("config.yaml"), config_yaml, force,
-            {"nr_layers": 3, "layer_size": 128, "npts": 8192}
+            {"nr_layers": nl, "layer_size": nn, "npts": npts}
         )
 
         _copy(path.joinpath("main.py"), main_py, force, None)
 
         _copy(
             path.joinpath("job.sh"), job_sh, force,
-            {"ngpus": ngpus, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
+            {"ngpus": 1, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
         )
 
         _copy(path.joinpath("no-singularity.sh"), noslurm_sh, force, None)
@@ -194,22 +197,23 @@ def create_cyclic_annealing_scaling(workdir, force=False):
     with open(workdir.joinpath("templates", "no-singularity.sh.temp"), "r") as fobj:
         noslurm_sh = fobj.read()
 
-    for ngpus in [1, 2, 4, 8]:
-        path = workdir.joinpath("cyclic-annealing-scaling", f"nl3-nn128-npts8192-ngpus{ngpus}")
+    options = [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]
+    for (nl, nn, npts) in options:
+        path = workdir.joinpath("cyclic-annealing", f"nl{nl}-nn{nn}-npts{npts}")
 
         if not path.is_dir() or force:
             path.mkdir(parents=True, exist_ok=True)
 
         _copy(
             path.joinpath("config.yaml"), config_yaml, force,
-            {"nr_layers": 3, "layer_size": 128, "npts": 8192}
+            {"nr_layers": nl, "layer_size": nn, "npts": npts}
         )
 
         _copy(path.joinpath("main.py"), main_py, force, None)
 
         _copy(
             path.joinpath("job.sh"), job_sh, force,
-            {"ngpus": ngpus, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
+            {"ngpus": 1, "ncpus": 32, "partition": "dgxa100_80g_2tb", "njobs": 6}
         )
 
         _copy(path.joinpath("no-singularity.sh"), noslurm_sh, force, None)
@@ -231,15 +235,16 @@ def create_ncg_sum_scaling(workdir, force=False):
     with open(workdir.joinpath("templates", "no-singularity.sh.temp"), "r") as fobj:
         noslurm_sh = fobj.read()
 
-    for nl, nn in itertools.product([2, 3], [64, 128]):
-        path = workdir.joinpath("ncg-sum-scaling", f"nl{nl}-nn{nn}-npts8192")
+    options = [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]
+    for (nl, nn, npts) in options:
+        path = workdir.joinpath("ncg-sum", f"nl{nl}-nn{nn}-npts{npts}")
 
         if not path.is_dir() or force:
             path.mkdir(parents=True, exist_ok=True)
 
         _copy(
             path.joinpath("config.yaml"), config_yaml, force,
-            {"nr_layers": nl, "layer_size": nn, "npts": 8192}
+            {"nr_layers": nl, "layer_size": nn, "npts": npts}
         )
 
         _copy(path.joinpath("main.py"), main_py, force, None)

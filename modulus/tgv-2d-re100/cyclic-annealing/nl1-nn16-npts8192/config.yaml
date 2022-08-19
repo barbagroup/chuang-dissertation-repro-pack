@@ -4,7 +4,7 @@ defaults :
   - arch: [fully_connected,]
   - scheduler: CyclicLR
   - optimizer: adamswa-ncgswa
-  - loss: sum
+  - loss: NSAnnealingLossAggregator
   - override training: adamswa-ncgswa
   - _self_
 
@@ -16,8 +16,8 @@ debug: false
 
 arch:
   fully_connected:
-    layer_size: 128
-    nr_layers: 3
+    layer_size: 16
+    nr_layers: 1
 
 scheduler:
   mode: "exp_range"
@@ -42,6 +42,9 @@ optimizer:
     eps: 1.0e-8
     weight_decay: 0.0
     amsgrad: False
+
+loss:
+  alpha: 0.1
 
 training:
   adam:

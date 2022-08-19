@@ -4,7 +4,7 @@ defaults :
   - arch: [fully_connected,]
   - scheduler: tf_exponential_lr
   - optimizer: adamswa-ncgswa
-  - loss: NSAnnealingLossAggregator
+  - loss: sum
   - override training: adamswa-ncgswa
   - _self_
 
@@ -16,8 +16,8 @@ debug: false
 
 arch:
   fully_connected:
-    layer_size: 128
-    nr_layers: 3
+    layer_size: 16
+    nr_layers: 1
 
 scheduler:
   decay_rate: 0.95
@@ -31,12 +31,16 @@ optimizer:
     weight_decay: 0.0
     amsgrad: False
 
-loss:
-  alpha: 0.1
+  ncgswa:
+    max_iters: 50000
+    gtol: 1.0e-6
+    ftol: 1.0e-6
+    error: False
+    debug: True
 
 training:
   adam:
-    max_steps : 400000
+    max_steps : 200000
     rec_results_freq : 1000
     rec_constraint_freq: 10000
     rec_inference_freq: 10000
@@ -51,7 +55,11 @@ training:
     max_steps : 0
 
   ncgswa:
-    max_steps : 0
+    max_steps : 20
+    rec_results_freq : 1
+    save_network_freq: 1
+    print_stats_freq: 1
+    summary_freq: 1
 
 batch_size:
   nbatches: 10000

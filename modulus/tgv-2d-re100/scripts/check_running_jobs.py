@@ -16,6 +16,8 @@ import subprocess
 import datetime
 import termcolor
 
+basedir = pathlib.Path(__file__).resolve().parents[1]
+
 jobids = subprocess.run(
     ["squeue", "-u", "x_nvidiaA101", "--states", "R", "--format", "%i"],
     capture_output=True, check=True,
@@ -31,7 +33,7 @@ for jobid in jobids:
 
     workdir = re.search(r"^\s*WorkDir=(.*?)$", info.stdout.decode("utf-8"), re.MULTILINE)
     workdir = pathlib.Path(workdir.group(1)).resolve()
-    names.append(workdir.name)
+    names.append(workdir.relative_to(basedir))
 
     logs.append(max(
         workdir.joinpath("logs").glob("run-*.log"),
