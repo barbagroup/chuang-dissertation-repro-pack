@@ -8,6 +8,8 @@
 
 """Post processing data of TGV 2D Re100.
 """
+# pylint: disable=invalid-name, too-many-arguments, too-many-return-statements, too-many-arguments
+# pylint: disable=too-many-locals
 import sys
 import itertools
 import multiprocessing
@@ -38,20 +40,21 @@ def analytical_solution(x, y, t, nu, field, V0=1., L=1., rho=1.):
     """
     if field == "u":
         return V0 * numpy.cos(x/L) * numpy.sin(y/L) * numpy.exp(-2.*nu*t/L**2)
-    elif field == "v":
+    if field == "v":
         return - V0 * numpy.sin(x/L) * numpy.cos(y/L) * numpy.exp(-2.*nu*t/L**2)
-    elif field == "p":
-        return - rho * V0**2 * numpy.exp(-4.*nu*t/L**2) * (numpy.cos(2.*x/L) + numpy.cos(2.*y/L)) / 4.
-    elif field in ["wz", "vorticity_z"]:
+    if field == "p":
+        return - rho * V0**2 * numpy.exp(-4.*nu*t/L**2) * \
+            (numpy.cos(2.*x/L) + numpy.cos(2.*y/L)) / 4.
+    if field in ["wz", "vorticity_z"]:
         return - 2. * V0 * numpy.cos(x/L) * numpy.cos(y/L) * numpy.exp(-2.*nu*t/L**2) / L
-    elif field == "KE":  # kinetic energy
+    if field == "KE":  # kinetic energy
         return numpy.pi**2 * L**2 * V0**2 * rho * numpy.exp(-4.*nu*t/L**2)
-    elif field == "KEDR":  # kinetic energy dissipation rate
+    if field == "KEDR":  # kinetic energy dissipation rate
         return 4. * numpy.pi**2 * V0**2 * nu * rho * numpy.exp(-4.*nu*t/L**2)
-    elif field == "enstrophy":  # enstrophy
+    if field == "enstrophy":  # enstrophy
         return 2. * numpy.pi**2 * V0**2 * nu * rho * numpy.exp(-4.*nu*t/L**2)
-    else:
-        raise ValueError(f"Unknown field: {field}")
+
+    raise ValueError(f"Unknown field: {field}")
 
 
 def get_casedata(casedir, mtype, rank=0):
@@ -82,7 +85,10 @@ def get_casedata(casedir, mtype, rank=0):
     cfg.swafiles.sort(key=lambda inp: int(pathlib.Path(inp).stem.replace("swa-model-", "")))
 
     # identify the last iteration
-    mxstep = max([pathlib.Path(fname).stem.replace("flow-net-", "") for fname in cfg.rawfiles], key=int)
+    mxstep = max([
+        pathlib.Path(fname).stem.replace("flow-net-", "")
+        for fname in cfg.rawfiles], key=int
+    )
 
     # will get the computational graph from the latest checkpoint
     if mtype == "raw":
@@ -166,9 +172,10 @@ def get_snapshots(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disa
     return h5file
 
 
-def get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disable=too-many-locals
+def get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank=0):
     """Get err versus simulation time and write to a HDF5 group immediately to save memory.
     """
+    # pylint: disable=unused-argument
 
     xbg, xed = process_domain(cfg.custom.x)
     ybg, yed = process_domain(cfg.custom.y)
@@ -194,7 +201,7 @@ def get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank=0):  # 
     npx, npy, npt = npx.reshape(-1, 1), npy.reshape(-1, 1), npt.reshape(-1, 1)
 
     # batching
-    nbs = 65536
+    bs = cfg.nx * cfg.ny * cfg.nt // 10
     nb = npx.size // 65536 + int(bool(npx.size % 65536))
 
     # tensor props; don't need vorticity here, so no need for autograd
@@ -204,11 +211,11 @@ def get_spatial_temporal_errs(cfg, graph, fields, h5file, h5kwargs, rank=0):  # 
     l1norms = {k: 0.0 for k in fields}
     l2norms = {k: 0.0 for k in fields}
     for i in range(nb):
-        bg, ed = i * nbs, (i + 1) * nbs  # ed will > the actual size, but numpy is smart enough
+        bg, ed = i * bs, (i + 1) * bs  # ed will > the actual size, but numpy is smart enough
         invars = {
-            "x": torch.tensor(npx[bg:ed], **kwargs),
-            "y": torch.tensor(npy[bg:ed], **kwargs),
-            "t": torch.tensor(npt[bg:ed], **kwargs),
+            "x": torch.tensor(npx[bg:ed], **kwargs),  # pylint: disable=no-member
+            "y": torch.tensor(npy[bg:ed], **kwargs),  # pylint: disable=no-member
+            "t": torch.tensor(npt[bg:ed], **kwargs),  # pylint: disable=no-member
         }
         preds = model(invars)
         preds = {k: v.detach().cpu().numpy() for k, v in preds.items()}
@@ -451,22 +458,61 @@ if __name__ == "__main__":
     layers = [1, 2, 3]
     neurons = [16, 32, 64, 128, 256]
     nbss = [1024, 2048, 4096, 8192, 16384, 32768, 65536]
-    mtypes = ["raw"]
-    for nl, nn, nbs, mtype in itertools.product(layers, neurons, nbss, mtypes):
-        inps.put((
-            topdir, topdir.joinpath("base-cases", f"nl{nl}-nn{nn}-npts{nbs}"),
-            mtype, True, True, True, True
-        ))
+    basename = "base-cases"
+    for nl, nn, nbs in itertools.product(layers, neurons, nbss):
+        cname = f"nl{nl}-nn{nn}-npts{nbs}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
 
-    # # other tests
-    # schers = ["exponential", "cyclic"]
-    # aggs = ["sum", "annealing"]
-    # ngpus = [1, 2, 4, 8]
-    # for scher, agg, ngpus, mtype in itertools.product(schers, aggs, ngpus, mtypes):
-    #     inps.put((
-    #         topdir, topdir.joinpath(f"{scher}-{agg}-tests", f"nl3-nn128-npts8192-gpus{ngpus}"),
-    #         mtype, True, True, True
-    #     ))
+    # scaling test: exp-sum-scaling
+    basename = "exp-sum-scaling"
+    for ngpus in [1, 2, 4, 8]:
+        cname = f"nl3-nn128-npts8192-ngpus{ngpus}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+
+        cname = f"nl2-nn32-npts8192-ngpus{ngpus}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+
+    cname = "nl2-nn32-npts16384-ngpus4"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+    cname = "nl2-nn32-npts32768-ngpus2"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+    cname = "nl2-nn32-npts65536-ngpus1"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+
+    cname = "nl3-nn128-npts16384-ngpus4"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+    cname = "nl3-nn128-npts32768-ngpus2"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+    cname = "nl3-nn128-npts65536-ngpus1"
+    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+
+
+    # exp-annealing
+    basename = "exp-annealing"
+    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
+        cname = f"nl{nl}-nn{nn}-npts{nbs}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+
+    # cyclic-sum
+    basename = "cyclic-sum"
+    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
+        cname = f"nl{nl}-nn{nn}-npts{nbs}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
+
+    # cyclic-sum
+    basename = "cyclic-annealing"
+    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
+        cname = f"nl{nl}-nn{nn}-npts{nbs}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
+
+    # ncg-sum
+    basename = "ncg-sum"
+    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
+        cname = f"nl{nl}-nn{nn}-npts{nbs}"
+        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
 
     # spawning processes
     procs = []
