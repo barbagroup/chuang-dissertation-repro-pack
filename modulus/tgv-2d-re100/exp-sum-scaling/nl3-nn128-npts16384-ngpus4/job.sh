@@ -8,13 +8,13 @@
 
 #SBATCH --job-name="TGV100"
 #SBATCH --nodes=1
-#SBATCH --gpus=1
+#SBATCH --gpus=4
 #SBATCH --cpus-per-gpu=32
 #SBATCH --partition=dgxa100_80g_2tb
 #SBATCH --exclude dgx1-[000-002,004]
 #SBATCH --time=0-04:00:00
 #SBATCH --output=slurm-%A_%a.out
-#SBATCH --array=1-3%1  # submit this job 6 times but only run 1 at a time
+#SBATCH --array=1-1%1  # submit this job 6 times but only run 1 at a time
 
 
 # get the path to this script (method depending on whether using Slurm)

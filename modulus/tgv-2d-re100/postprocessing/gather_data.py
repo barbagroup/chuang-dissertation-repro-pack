@@ -486,7 +486,6 @@ if __name__ == "__main__":
     cname = "nl3-nn128-npts65536-ngpus1"
     inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
 
-
     # exp-annealing
     basename = "exp-annealing"
     for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
@@ -500,7 +499,7 @@ if __name__ == "__main__":
         inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
         inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
 
-    # cyclic-sum
+    # cyclic-annealing
     basename = "cyclic-annealing"
     for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
         cname = f"nl{nl}-nn{nn}-npts{nbs}"

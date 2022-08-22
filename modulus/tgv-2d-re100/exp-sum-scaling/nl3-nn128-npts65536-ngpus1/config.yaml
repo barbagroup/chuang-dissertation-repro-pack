@@ -17,7 +17,7 @@ debug: false
 arch:
   fully_connected:
     layer_size: 128
-    nr_layers: 2
+    nr_layers: 3
 
 scheduler:
   decay_rate: 0.95
@@ -31,16 +31,9 @@ optimizer:
     weight_decay: 0.0
     amsgrad: False
 
-  ncgswa:
-    max_iters: 50000
-    gtol: 1.0e-6
-    ftol: 1.0e-6
-    error: False
-    debug: True
-
 training:
   adam:
-    max_steps : 100000
+    max_steps : 400000
     rec_results_freq : 1000
     rec_constraint_freq: 10000
     rec_inference_freq: 10000
@@ -55,15 +48,11 @@ training:
     max_steps : 0
 
   ncgswa:
-    max_steps : 10
-    rec_results_freq : 1
-    save_network_freq: 1
-    print_stats_freq: 1
-    summary_freq: 1
+    max_steps : 0
 
 batch_size:
   nbatches: 10000
-  npts: 8192
+  npts: 65536
 
 custom:
   x: [-pi, pi]
