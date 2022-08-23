@@ -511,7 +511,6 @@ if __name__ == "__main__":
     for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
         cname = f"nl{nl}-nn{nn}-npts{nbs}"
         inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
 
     # spawning processes
     procs = []

@@ -127,7 +127,7 @@ def _plot_final_spatial_temporal_err(archs, coutdir, eoutdir, figdir):
             crdatau.append(float(h5file["sterrs/u/l2norm"][...]))
             crdatav.append(float(h5file["sterrs/v/l2norm"][...]))
 
-        with h5open(coutdir.joinpath(f"nl{nl}-nn{nn}-npts{nbs}-raw.h5"), "r") as h5file:
+        with h5open(coutdir.joinpath(f"nl{nl}-nn{nn}-npts{nbs}-swa.h5"), "r") as h5file:
             csdatau.append(float(h5file["sterrs/u/l2norm"][...]))
             csdatav.append(float(h5file["sterrs/v/l2norm"][...]))
 

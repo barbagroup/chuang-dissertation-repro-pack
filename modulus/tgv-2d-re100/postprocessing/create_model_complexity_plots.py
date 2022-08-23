@@ -10,6 +10,7 @@
 """
 import itertools
 import pathlib
+import re
 import numpy
 import pandas
 from h5py import File as h5open
@@ -30,89 +31,122 @@ def dof_calculator(nl, nn, dim=2, unsteady=True, periodic=True):
     return dof
 
 
-def create_err_arch_boxplot(outdir, figdir, field, nls, nns, nbss):
+def create_err_arch_boxplot(figdir):
     """plot_err_arch_boxplot
     """
-    data = {"nl": [], "nn": [], "nbs": [], "l2norm": []}
-    for nl, nn, nbs in itertools.product(nls, nns, nbss):
-        data["nl"].append(nl)
-        data["nn"].append(nn)
-        data["nbs"].append(nbs)
-        with h5open(outdir.joinpath(f"nl{nl}-nn{nn}-npts{nbs}-raw.h5"), "r") as h5file:
-            data["l2norm"].append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+    projdir = pathlib.Path(__file__).resolve().parents[1]
+    outdir = projdir.joinpath("outputs")
 
+    def _get_data(_prefix, _nls, _nns, _errs):
+        _cases = projdir.joinpath(_prefix).glob("nl*-nn*-npts*")
+        for _case, field in itertools.product(_cases, ["u", "v"]):
+            _nl, _nn = re.search(r"nl(\d)-nn(\d+)-npts.*", _case.name).groups()
+
+            with h5open(outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-raw.h5")) as h5file:
+                _errs.append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+            _nls.append(int(_nl))
+            _nns.append(int(_nn))
+
+            if outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-swa.h5").is_file():
+                with h5open(outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-swa.h5")) as h5file:
+                    _errs.append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+                _nls.append(int(_nl))
+                _nns.append(int(_nn))
+
+        return _nls, _nns, _errs
+
+    nls, nns, errs = [], [], []
+    nls, nns, errs = _get_data("base-cases", nls, nns, errs)
+    nls, nns, errs = _get_data("exp-sum-scaling", nls, nns, errs)
+    nls, nns, errs = _get_data("exp-annealing", nls, nns, errs)
+    nls, nns, errs = _get_data("cyclic-sum", nls, nns, errs)
+    nls, nns, errs = _get_data("cyclic-annealing", nls, nns, errs)
+    nls, nns, errs = _get_data("ncg-sum", nls, nns, errs)
+
+    data = {"nl": nls, "nn": nns, "l2norm": errs}
     data = pandas.DataFrame(data)
-    data = data.pivot(index="nbs", columns=["nl", "nn"], values="l2norm")
-    data = data[data.mean().sort_values(ascending=False).index]
+    data = data.pivot(index=None, columns=["nl", "nn"], values="l2norm")
+    data = data[data.mean().sort_values(ascending=False).index]  # automatically skips NaN
 
-    fig = pyplot.figure()
-    fig.suptitle(rf"Error distribution across network architectures, ${field}$")
+    fig = pyplot.figure(figsize=(6.5, 4))
+    fig.suptitle(r"Error distribution v.s. network architectures")
     gs = fig.add_gridspec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
-    ax.boxplot(
-        data.values, labels=data.columns, showmeans=True,
-        meanprops={"marker": ".", "mfc": "k", "mec": "k"},
-        medianprops={"ls": "none"},
+    ax = data.boxplot(
+        ax=ax, rot=45, showmeans=True, meanprops={"marker": ".", "mfc": "k", "mec": "k"},
+        grid=False, medianprops={"ls": "none"}, boxprops={"color": "k"}, whiskerprops={"color": "k"}
     )
-    ax.tick_params(axis="x", labelrotation=45)
     ax.set_xlabel(r"$(N_l, N_n)$")
-    ax.set_ylabel(rf"$L_2$ error of ${field}$")
+    ax.set_ylabel(r"$L_2$ error")
     ax.set_yscale("log")
 
     figdir.joinpath("err-vs-model-complexity").mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir.joinpath("err-vs-model-complexity", f"err-arch-boxplot-{field}.png"))
+    fig.savefig(figdir.joinpath("err-vs-model-complexity", "err-arch-boxplot.png"))
 
 
-def create_err_dof_boxplot(outdir, figdir, field, nls, nns, nbss):
+def create_err_dof_boxplot(figdir):
     """plot_dof_err
     """
-    data = {"dofs": [], "l2norm": [], "nbs": []}
-    for nl, nn, nbs in itertools.product(nls, nns, nbss):
-        data["nbs"].append(nbs)
-        data["dofs"].append(dof_calculator(nl, nn, 2, True, True))
-        with h5open(outdir.joinpath(f"nl{nl}-nn{nn}-npts{nbs}-raw.h5"), "r") as h5file:
-            data["l2norm"].append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+    projdir = pathlib.Path(__file__).resolve().parents[1]
+    outdir = projdir.joinpath("outputs")
 
+    def _get_data(_prefix, _dofs, _errs):
+        _cases = projdir.joinpath(_prefix).glob("nl*-nn*-npts*")
+        for _case, field in itertools.product(_cases, ["u", "v"]):
+            _nl, _nn = re.search(r"nl(\d)-nn(\d+)-npts.*", _case.name).groups()
+
+            with h5open(outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-raw.h5")) as h5file:
+                _errs.append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+            _dofs.append(dof_calculator(int(_nl), int(_nn), 2, True, True))
+
+            if outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-swa.h5").is_file():
+                with h5open(outdir.joinpath(_case.relative_to(projdir)).with_name(_case.name+"-swa.h5")) as h5file:
+                    _errs.append(float(h5file[f"sterrs/{field}/l2norm"][...]))
+                _dofs.append(dof_calculator(int(_nl), int(_nn), 2, True, True))
+
+        return _dofs, _errs
+
+    dofs, errs = [], []
+    dofs, errs = _get_data("base-cases", dofs, errs)
+    dofs, errs = _get_data("exp-sum-scaling", dofs, errs)
+    dofs, errs = _get_data("exp-annealing", dofs, errs)
+    dofs, errs = _get_data("cyclic-sum", dofs, errs)
+    dofs, errs = _get_data("cyclic-annealing", dofs, errs)
+    dofs, errs = _get_data("ncg-sum", dofs, errs)
+
+    data = {"dofs": dofs, "l2norm": errs}
     data = pandas.DataFrame(data)
-    data = data.pivot(index="nbs", columns=["dofs"], values="l2norm")
+    data = data.pivot(index=None, columns=["dofs"], values="l2norm")
     data = data.sort_index(axis=1)
 
     # box widths on the plot with log x axis
     width = lambda p, w: 10**(numpy.log10(p)+w/2.)-10**(numpy.log10(p)-w/2.)  # noqa: E731
 
-    fig = pyplot.figure()
-    fig.suptitle(rf"Error distribution v.s. degree of freedom, ${field}$")
+    fig = pyplot.figure(figsize=(6.5, 4))
+    fig.suptitle(r"Error distribution v.s. degree of freedom")
     gs = fig.add_gridspec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
-    ax.boxplot(
-        data.values, labels=data.columns, positions=data.columns,
-        showmeans=True, widths=width(data.columns, 0.1),
-        meanprops={"marker": ".", "mfc": "k", "mec": "k"},
-        medianprops={"ls": "none"},
+    ax = data.boxplot(
+        ax=ax, rot=45, positions=data.columns, widths=width(data.columns, 0.1),
+        showmeans=True, grid=False, meanprops={"marker": ".", "mfc": "k", "mec": "k"},
+        medianprops={"ls": "none"}, boxprops={"color": "k"}, whiskerprops={"color": "k"}
     )
 
     ax.set_xlabel("Degree of freedom")
     ax.set_xscale("log")
-    ax.set_ylabel(rf"$L_2$ error of ${field}$")
+    ax.set_ylabel(r"$L_2$ error")
     ax.set_yscale("log")
 
     figdir.joinpath("err-vs-model-complexity").mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir.joinpath("err-vs-model-complexity", f"err-dof-boxplot-{field}.png"))
+    fig.savefig(figdir.joinpath("err-vs-model-complexity", "err-dof-boxplot.png"))
 
 
 if __name__ == "__main__":
     _projdir = pathlib.Path(__file__).resolve().parents[1]
-    _outdir = _projdir.joinpath("outputs", "base-cases")
     _figdir = _projdir.joinpath("figures")
     _figdir.mkdir(parents=True, exist_ok=True)
 
-    _nls = [1, 2, 3]
-    _nns = [16, 32, 64, 128, 256]
-    _nbss = [2**i for i in range(10, 17)]
-
-    create_err_arch_boxplot(_outdir, _figdir, "u", _nls, _nns, _nbss)
-    create_err_arch_boxplot(_outdir, _figdir, "v", _nls, _nns, _nbss)
-    create_err_dof_boxplot(_outdir, _figdir, "u", _nls, _nns, _nbss)
-    create_err_dof_boxplot(_outdir, _figdir, "v", _nls, _nns, _nbss)
+    create_err_arch_boxplot(_figdir)
+    create_err_dof_boxplot(_figdir)

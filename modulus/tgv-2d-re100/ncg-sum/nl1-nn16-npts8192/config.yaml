@@ -31,8 +31,8 @@ optimizer:
     weight_decay: 0.0
     amsgrad: False
 
-  ncgswa:
-    max_iters: 50000
+  ncg:
+    max_iters: 1000
     gtol: 1.0e-6
     ftol: 1.0e-6
     error: False
@@ -52,14 +52,14 @@ training:
     max_steps : 0
 
   ncg:
-    max_steps : 0
-
-  ncgswa:
-    max_steps : 20
+    max_steps : 200
     rec_results_freq : 1
     save_network_freq: 1
     print_stats_freq: 1
     summary_freq: 1
+
+  ncgswa:
+    max_steps : 0
 
 batch_size:
   nbatches: 10000
