@@ -45,8 +45,8 @@ mesh:
 parameters:
   dt: 0.01
   startStep: 0
-  nt: 20000
-  nsave: 2500
+  nt: 2000
+  nsave: 100
   nrestart: 5000
   convection: ADAMS_BASHFORTH_2
   diffusion: CRANK_NICOLSON
