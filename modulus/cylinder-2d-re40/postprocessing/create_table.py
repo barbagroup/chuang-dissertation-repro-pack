@@ -22,15 +22,15 @@ template = \
     \\begin{{threeparttable}}[b]
         \\begin{{tabular}}{{lccc}}
             \\toprule
-            & $C_D$ & $C_{{D_p}}$ & $C_{{D_f}}$ \\
+            & $C_D$ & $C_{{D_p}}$ & $C_{{D_f}}$ \\\\
             \\midrule
-            $(6, 512, 6400)$, steady & {:.2f} & {:.2f} & {:.2f} \\
-            $(6, 512, 6400)$, unsteady & {:.2f} & {:.2f} & {:.2f} \\
-            $(6, 512, 6400)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\
-            $(6, 512, 6400)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\
-            $(6, 512, 25600)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\
-            $(6, 512, 25600)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\
-            PetIBM & 1.63 & 1.02 & 0.61 \\
+            $(6, 512, 6400)$, steady & {:.2f} & {:.2f} & {:.2f} \\\\
+            $(6, 512, 6400)$, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
+            $(6, 512, 6400)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\\\
+            $(6, 512, 6400)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
+            $(6, 512, 25600)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\\\
+            $(6, 512, 25600)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
+            PetIBM & 1.63 & 1.02 & 0.61 \\\\
             Rosetti et al., 2012\\cite{{rosetti_urans_2012}}\\tnote{{1}} & 1.74\\pm 0.09 & n/a & n/a \\\\
             Rosetti et al., 2012\\cite{{rosetti_urans_2012}}\\tnote{{2}} & 1.61 & n/a & n/a \\\\
             Sen et al., 2009\\cite{{sen_steady_2009}}\\tnote{{2}} & 1.51 & n/a & n/a \\\\
