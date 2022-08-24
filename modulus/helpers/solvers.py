@@ -609,11 +609,6 @@ class AdamNCGSWA(SolverBase):
             self.backup_checkpoint()  # back up the checkpoint
         else:
             self.initial_step = self.step
-
-            # copy SWA parameters back to the main model
-            for p_swa, p_model in zip(self.swa_model.module.parameters(), self.global_optimizer_model.parameters()):
-                p_model.detach().copy_(p_swa.detach().clone())
-
             self.save_checkpoint(True)  # force writing a checkpoint
             self.backup_checkpoint(True)  # back up the checkpoint
 
