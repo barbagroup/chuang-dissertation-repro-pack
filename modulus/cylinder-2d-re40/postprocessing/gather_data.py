@@ -41,9 +41,9 @@ def get_casedata(workdir, casename, mtype, rank=0):
 
     # cases solving steady N-S equation
     steadycases = [
-        "from-example", "mocking-example", "mocking-example-conv-out", "mocking-example-cyclic",
-        "mocking-example-conv-out-cyclic", "nl5-nn128-npts81920-nosdf-steady",
-        "nl6-nn512-npts6400-steady"
+        "nl6-nn512-npts6400-steady",
+        "nl6-nn512-npts6400-large-cycle-steady",
+        "nl6-nn512-npts25600-large-cycle-steady",
     ]
 
     # files, directories, and paths
@@ -92,7 +92,8 @@ def get_casedata(workdir, casename, mtype, rank=0):
 
     # get the computational graph from file
     print(f"[Rank {rank}] Reading model from {modelfile.name}")
-    graph, dtype = get_graph_from_checkpoint(cfg, modelfile, dim=2, unsteady=unsteady, mtype=mtype, device="cpu")
+    graph, dtype = get_graph_from_checkpoint(
+        cfg, modelfile, dim=2, unsteady=unsteady, mtype=mtype, device="cpu")
 
     # put everything to a single data object
     out = OmegaConf.create({
@@ -433,10 +434,18 @@ if __name__ == "__main__":
     inps = ctx.JoinableQueue()
 
     # steady cases
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", True, True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "swa", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "swa", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-steady", "raw", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-steady", "swa", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-unsteady", "raw", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-unsteady", "swa", False, False, False))
+    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-steady", "raw", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-steady", "swa", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-unsteady", "raw", True, True, True))
+    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-unsteady", "swa", True, True, True))
 
     # spawning processes
     procs = []
