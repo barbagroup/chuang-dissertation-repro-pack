@@ -10,9 +10,9 @@
 """
 import io
 import pathlib
-import pandas
 import lzma
 import re
+import pandas
 from sympy import sympify as _sympify
 from tensorboard.backend.event_processing import event_accumulator
 from torch import load
@@ -173,9 +173,11 @@ def create_graph(cfg, dim=2, unsteady=True, params=None):
 
     # set up scales
     if "scaling" in cfg.custom and not cfg.custom.scaling:
+        assert isinstance(cfg.custom.scaling, bool)
         scales = dict({key: (0., 1.) for key in inkeys})
     else:
         scales = dict({key: process_domain(cfg.custom[key]) for key in inkeys})
+        scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
 
     # set up periodicity
     try:
@@ -355,13 +357,13 @@ def update_graph_with_file(cfg, filename, graph, device="cpu"):
 
     if mdname != "FullyConnectedArch":
         raise NotImplementedError
-    
+
     # identify which node represents the actual neural network for the flow field
     for node in graph:
         if node.name == "flow-net":
             node.evaluate.load_state_dict(model.state_dict())
             break
-    
+
     # determine dtype
     dtype = next(model.parameters()).dtype
 
@@ -389,24 +391,24 @@ def log_parser(casedir):
         if len(results) == 0:  # try new pattern if results is empty
             with open(logfile, "r") as fobj:
                 results = re.findall(newpat, fobj.read(), re.MULTILINE)
-            
+
             # update data type to int and floats
             for i, result in enumerate(results):
                 results[i] = (int(result[0]), float(result[1]), float(result[2]))
-        
+
         else:  # this file contains old pattern
             if results[0][0] == "0":
                 results[0] = (int(0), float(results[0][1]), 0.0)
             else:
                 results[0] = (int(results[0][0]),float(results[0][1]), float(results[0][2]))
-        
+
             # old pattern records time per iteration; change to elapsed time
             for i, result in zip(range(1, len(results)), results[1:]):
                 acctime = float(result[2]) * (int(result[0]) - int(results[i-1][0]))
                 results[i] = (int(result[0]), float(result[1]), acctime)
 
         out.extend(results)
-    
+
     out = pandas.DataFrame(out, columns=["step", "loss", "time elapsed"])
     out = out.drop_duplicates(subset="step", keep="first")
     out = out.sort_values(by="step", axis=0)
