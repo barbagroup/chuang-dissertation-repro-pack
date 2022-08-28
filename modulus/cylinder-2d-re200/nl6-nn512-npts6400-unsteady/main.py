@@ -6,16 +6,12 @@
 #
 # Distributed under terms of the BSD 3-Clause license.
 
-"""2D Cylinder flow Re=40.
+"""2D Cylinder flow Re=200, unsteady solver.
 """
-# pylint: disable=invalid-name, relative-beyond-top-level
+# pylint: disable=invalid-name, relative-beyond-top-level, import-error
 import sys
 import pathlib
 import sympy
-from torch import zeros_like as _torchzeroslike  # pylint: disable=no-name-in-module
-from torch import tensor as _torchtensor  # pylint: disable=no-name-in-module
-from torch import arange as _torcharange  # pylint: disable=no-name-in-module
-from torch import meshgrid as _torchmeshgrid  # pylint: disable=no-name-in-module
 from modulus.key import Key as _Key
 from modulus.hydra.config import ModulusConfig as _ModulusConfig
 from modulus.geometry.csg.csg_2d import Rectangle as _Rectangle
@@ -29,14 +25,12 @@ from omegaconf.errors import ConfigAttributeError as _ConfigAttributeError
 for parent in pathlib.Path(__file__).resolve().parents:
     if parent.joinpath("helpers").is_dir():
         sys.path.insert(0, str(parent))
-        from helpers.pdes import ConvectiveBC  # pylint: disable=import-error
-        from helpers.aggregators import register_loss_configs  # pylint: disable=import-error
-        from helpers.schedulers import register_scheduler_configs  # pylint: disable=import-error
-        from helpers.solvers import AdamNCGSWA  # pylint: disable=import-error
-        from helpers.solvers import register_optimizer_configs  # pylint: disable=import-error
-        from helpers.utils import process_domain  # pylint: disable=import-error
-        from helpers.utils import get_activation_fn  # pylint: disable=import-error
-        from helpers.constraints import StepAwarePointwiseConstraint  # pylint: disable=import-error
+        from helpers.aggregators import register_loss_configs
+        from helpers.schedulers import register_scheduler_configs
+        from helpers.solvers import AdamNCGSWA
+        from helpers.solvers import register_optimizer_configs
+        from helpers.utils import process_domain
+        from helpers.utils import get_activation_fn
         from helpers.constraints import StepAwarePointwiseInteriorConstraint
         from helpers.constraints import StepAwarePointwiseBoundaryConstraint
         register_loss_configs()
@@ -54,6 +48,9 @@ def get_computational_graph(cfg: _ModulusConfig):
     # set up scales
     scales = dict({key: process_domain(cfg.custom[key]) for key in ["x", "y", "t"]})
 
+    # fixed! that `scale` is not defined by (min, max) but (min, length)
+    scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
+
     # set up periodicity
     try:
         periodicity = {key: process_domain(cfg.custom[key]) for key in cfg.custom.periodic}
@@ -70,12 +67,7 @@ def get_computational_graph(cfg: _ModulusConfig):
         **{k: v for k, v in cfg.arch.fully_connected.items() if k != "_target_"}
     )
 
-    u_outlet = ConvectiveBC("u", 1.0, "convective_u", 2, True)
-    v_outlet = ConvectiveBC("v", 1.0, "convective_v", 2, True)
-
-    nodes = \
-        pde.make_nodes() + u_outlet.make_nodes() + v_outlet.make_nodes() + \
-        [net.make_node(name="flow-net", jit=cfg.jit)]
+    nodes = pde.make_nodes() + [net.make_node(name="flow-net", jit=cfg.jit)]
 
     return nodes, net
 
@@ -109,7 +101,8 @@ def get_initial_constraint(nodes, geo, cfg):
         batch_size=cfg.batch_size.nic,
         batch_per_epoch=cfg.batch_size.nbatches,
         bounds={x: (xbg, xed), y: (ybg, yed)},
-        param_ranges={t: tbg}
+        param_ranges={t: tbg},
+        quasirandom=True,
     )
 
     return constraint
@@ -134,18 +127,20 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcy,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(x, xbg),
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
-    # outlet: convective BC
+    # outlet: zero pressure
     outlet = StepAwarePointwiseBoundaryConstraint(
         nodes=nodes,
         geometry=geo,
-        outvar={"convective_u": 0.0, "convective_v": 0.0},
+        outvar={"p": 0.0},
         batch_size=cfg.batch_size.nbcy,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(x, xed),
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
     # bottom
@@ -156,7 +151,8 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcx,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(y, ybg),
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
     # top
@@ -167,7 +163,8 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcx,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(y, yed),
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
     # noslip
@@ -181,32 +178,11 @@ def get_boundary_constraints(nodes, geo, cfg):
             sympy.Ge(x, -radius), sympy.Le(x, radius),
             sympy.Ge(y, -radius), sympy.Le(y, radius)
         ),
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
-    # reference pressure
-    refx = _torchtensor([xed])
-    refy = _torchtensor([0.0])
-    reft = _torcharange(float(tbg), float(ted+1))
-    refx, refy, reft = _torchmeshgrid(refx, refy, reft, indexing="xy")
-    refp = _torchzeroslike(refx)
-
-    refx = refx.reshape(-1, 1).numpy()
-    refy = refy.reshape(-1, 1).numpy()
-    reft = reft.reshape(-1, 1).numpy()
-    refp = refp.reshape(-1, 1).numpy()
-
-    refp = StepAwarePointwiseConstraint.from_numpy(
-        nodes=nodes,
-        invar={"x": refx, "y": refy, "t": reft},
-        outvar={"p": refp},
-        batch_size=refx.size,
-    )
-
-    return {
-        "inlet": inlet, "outlet": outlet, "top": top, "bottom": bottom, "noslip": noslip,
-        "refp": refp,
-    }
+    return {"inlet": inlet, "outlet": outlet, "top": top, "bottom": bottom, "noslip": noslip}
 
 
 def get_pde_constraint(nodes, geo, cfg):
@@ -226,7 +202,8 @@ def get_pde_constraint(nodes, geo, cfg):
         batch_size=cfg.batch_size.npts,
         batch_per_epoch=cfg.batch_size.nbatches,
         bounds={x: (xbg, xed), y: (ybg, yed)},
-        param_ranges={t: (tbg, ted)}
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
     return constraint

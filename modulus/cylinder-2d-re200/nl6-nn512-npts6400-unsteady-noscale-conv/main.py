@@ -6,7 +6,7 @@
 #
 # Distributed under terms of the BSD 3-Clause license.
 
-"""2D Cylinder flow Re=200, steady solver.
+"""2D Cylinder flow Re=200, unsteady solver.
 """
 # pylint: disable=invalid-name, relative-beyond-top-level, import-error
 import sys
@@ -25,6 +25,7 @@ from omegaconf.errors import ConfigAttributeError as _ConfigAttributeError
 for parent in pathlib.Path(__file__).resolve().parents:
     if parent.joinpath("helpers").is_dir():
         sys.path.insert(0, str(parent))
+        from helpers.pdes import ConvectiveBC  # pylint: disable=import-error
         from helpers.aggregators import register_loss_configs
         from helpers.schedulers import register_scheduler_configs
         from helpers.solvers import AdamNCGSWA
@@ -45,29 +46,28 @@ def get_computational_graph(cfg: _ModulusConfig):
     """Returns the computational graph as a list of nodes.
     """
 
-    # set up scales
-    scales = dict({key: process_domain(cfg.custom[key]) for key in ["x", "y"]})
-
-    # fixed! that `scale` is not defined by (min, max) but (min, length)
-    scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
-
     # set up periodicity
     try:
         periodicity = {key: process_domain(cfg.custom[key]) for key in cfg.custom.periodic}
     except _ConfigAttributeError:
         periodicity = None
 
-    pde = NavierStokes(cfg.custom.nu, cfg.custom.rho, 2, False)
+    pde = NavierStokes(cfg.custom.nu, cfg.custom.rho, 2, True)
 
     net = _FullyConnectedArch(
-        input_keys=[_Key(key, scale=scales[key]) for key in ["x", "y"]],
+        input_keys=[_Key(key) for key in ["x", "y", "t"]],
         output_keys=[_Key("u"), _Key("v"), _Key("p")],
         periodicity=periodicity,
         activation_fn=get_activation_fn(cfg.custom.activation),
         **{k: v for k, v in cfg.arch.fully_connected.items() if k != "_target_"}
     )
 
-    nodes = pde.make_nodes() + [net.make_node(name="flow-net", jit=cfg.jit)]
+    u_outlet = ConvectiveBC("u", 1.0, "convective_u", 2, True)
+    v_outlet = ConvectiveBC("v", 1.0, "convective_v", 2, True)
+
+    nodes = \
+        pde.make_nodes() + u_outlet.make_nodes() + v_outlet.make_nodes() + \
+        [net.make_node(name="flow-net", jit=cfg.jit)]
 
     return nodes, net
 
@@ -84,15 +84,40 @@ def get_computational_domain(cfg: _ModulusConfig):
     return geo
 
 
+def get_initial_constraint(nodes, geo, cfg):
+    """Get an interior pointwise constraint for initial conditions (i.e., t=0)
+    """
+
+    xbg, xed = process_domain(cfg.custom.x)
+    ybg, yed = process_domain(cfg.custom.y)
+    tbg, _ = process_domain(cfg.custom.t)
+
+    x, y, t = sympy.symbols("x, y, t")
+
+    constraint = StepAwarePointwiseInteriorConstraint(
+        nodes=nodes,
+        geometry=geo,
+        outvar={"u": float(cfg.custom.uic), "v": 0.0, "p": 0.0},
+        batch_size=cfg.batch_size.nic,
+        batch_per_epoch=cfg.batch_size.nbatches,
+        bounds={x: (xbg, xed), y: (ybg, yed)},
+        param_ranges={t: tbg},
+        quasirandom=True,
+    )
+
+    return constraint
+
+
 def get_boundary_constraints(nodes, geo, cfg):
     """Get BCs.
     """
 
     xbg, xed = process_domain(cfg.custom.x)
     ybg, yed = process_domain(cfg.custom.y)
+    tbg, ted = process_domain(cfg.custom.t)
     radius = sympy.sympify(cfg.custom.radius).evalf()  # 0.5
 
-    x, y = sympy.symbols("x, y")
+    x, y, t = sympy.symbols("x, y, t")
 
     # inlet
     inlet = StepAwarePointwiseBoundaryConstraint(
@@ -102,17 +127,19 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcy,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(x, xbg),
+        param_ranges={t: (tbg, ted)},
         quasirandom=True,
     )
 
-    # outlet: zero pressure
+    # outlet: convective BC
     outlet = StepAwarePointwiseBoundaryConstraint(
         nodes=nodes,
         geometry=geo,
-        outvar={"p": 0.0},
+        outvar={"convective_u": 0.0, "convective_v": 0.0},
         batch_size=cfg.batch_size.nbcy,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(x, xed),
+        param_ranges={t: (tbg, ted)},
         quasirandom=True,
     )
 
@@ -124,6 +151,7 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcx,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(y, ybg),
+        param_ranges={t: (tbg, ted)},
         quasirandom=True,
     )
 
@@ -135,6 +163,7 @@ def get_boundary_constraints(nodes, geo, cfg):
         batch_size=cfg.batch_size.nbcx,
         batch_per_epoch=cfg.batch_size.nbatches,
         criteria=sympy.Eq(y, yed),
+        param_ranges={t: (tbg, ted)},
         quasirandom=True,
     )
 
@@ -149,6 +178,7 @@ def get_boundary_constraints(nodes, geo, cfg):
             sympy.Ge(x, -radius), sympy.Le(x, radius),
             sympy.Ge(y, -radius), sympy.Le(y, radius)
         ),
+        param_ranges={t: (tbg, ted)},
         quasirandom=True,
     )
 
@@ -161,8 +191,9 @@ def get_pde_constraint(nodes, geo, cfg):
 
     xbg, xed = process_domain(cfg.custom.x)
     ybg, yed = process_domain(cfg.custom.y)
+    tbg, ted = process_domain(cfg.custom.t)
 
-    x, y = sympy.symbols("x, y")
+    x, y, t = sympy.symbols("x, y, t")
 
     constraint = StepAwarePointwiseInteriorConstraint(
         nodes=nodes,
@@ -171,7 +202,8 @@ def get_pde_constraint(nodes, geo, cfg):
         batch_size=cfg.batch_size.npts,
         batch_per_epoch=cfg.batch_size.nbatches,
         bounds={x: (xbg, xed), y: (ybg, yed)},
-        quasirandom=True
+        param_ranges={t: (tbg, ted)},
+        quasirandom=True,
     )
 
     return constraint
@@ -184,6 +216,9 @@ def get_solver_domains(nodes, geo, cfg):
     """
 
     domain = _Domain()
+
+    # IC, i.e., at t = 0 sec
+    domain.add_constraint(get_initial_constraint(nodes, geo, cfg), name="ic")
 
     # boundary conditions
     for name, bc in get_boundary_constraints(nodes, geo, cfg).items():  # pylint: disable=invalid-name
