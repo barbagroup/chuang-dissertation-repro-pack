@@ -8,6 +8,7 @@
 
 """Post processing data of Cylinder 2D Re200.
 """
+# pylint: disable=import-error
 import sys
 import itertools
 import multiprocessing
@@ -25,8 +26,9 @@ for parent in pathlib.Path(__file__).resolve().parents:
     if parent.joinpath("helpers").is_dir():
         projdir = parent
         sys.path.insert(0, str(projdir))
-        from helpers.utils import get_graph_from_checkpoint  # pylint: disable=import-error
-        from helpers.utils import process_domain  # pylint: disable=import-error
+        from helpers.utils import get_graph_from_checkpoint
+        from helpers.utils import process_domain
+        from helpers.utils import log_parser
         break
 else:
     raise FileNotFoundError("Couldn't find module `helpers`.")
@@ -37,35 +39,50 @@ def get_casedata(workdir, casename, mtype, rank=0):
     """
 
     # cases solving steady N-S equation
-    steadycases = ["nl6-nn512-npts6400-steady"]
+    steadycases = [
+        "nl6-nn512-npts6400-steady",
+        "nl6-nn512-npts6400-steady-noscale",
+    ]
 
     # files, directories, and paths
     datadir = workdir.joinpath(casename, "outputs")
+
+    # use log to determine should we use the last checkpoint or the checkpoint with best loss
+    logs = log_parser(workdir.joinpath(casename))
+
+    # find the step with the minumum loss
+    steps = [int(f.name.replace("flow-net.pth.", "")) for f in datadir.glob("flow-net.pth.*")]
+    bestloss = logs.loc[steps, "loss"].min()
+    beststep = logs.loc[steps, "loss"].idxmin()
 
     # case configuration
     cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
 
     # will get the computational graph from the latest checkpoint
     if mtype == "raw":
-        modelfile = datadir.joinpath("flow-net.pth")
+        modelfile = datadir.joinpath(f"flow-net.pth.{beststep}")
     elif mtype == "swa":
-        modelfile = datadir.joinpath("swa-model.pth")
+        modelfile = datadir.joinpath(f"swa-model.pth.{beststep}")
     else:
         raise ValueError(f"Unknown model type: {mtype}")
 
     # extra configurations
     cfg.device = "cpu"
-    cfg.eval_times = [float(val) for val in range(0, 201, 10)]
+    cfg.eval_times = [float(val) for val in range(135, 156, 1)]
     cfg.nx = 400  # number of cells in x direction
     cfg.ny = 200  # number of cells in y direction
     cfg.nr = 720  # number of cells on cylinder surface
+
+    if "noscale" in casename:
+        cfg.custom.scaling = False
 
     # whether the model and graph should have the variable `t`
     unsteady = casename not in steadycases
 
     # get the computational graph from file
-    print(f"[Rank {rank}] Reading model from {modelfile.name}")
-    graph, dtype = get_graph_from_checkpoint(cfg, modelfile, dim=2, unsteady=unsteady, mtype=mtype, device="cpu")
+    print(f"[Rank {rank}] Reading model from {modelfile.name} w/ best loss of {bestloss}")
+    graph, dtype = get_graph_from_checkpoint(
+        cfg, modelfile, dim=2, unsteady=unsteady, mtype=mtype, device="cpu")
 
     # put everything to a single data object
     out = OmegaConf.create({
@@ -120,10 +137,16 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
             invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
             preds = model(invars)
             snapshots[time] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
+
+            # correct for reference pressure
+            snapshots[time]["p"] -= snapshots[time]["p"].mean()
     else:
         print(f"[Rank {rank}] Predicting steady solution")
         preds = model(invars)
         snapshots["steady"] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
+
+        # correct for reference pressure
+        snapshots["steady"]["p"] -= snapshots["steady"]["p"].mean()
 
     return snapshots
 
@@ -385,7 +408,6 @@ def worker(inpq: multiprocessing.JoinableQueue, rank: int):
 if __name__ == "__main__":
     import os
 
-    os.environ["OMP_NUM_THREADS"] = "4"  # limit threads per process
     ctx = multiprocessing.get_context('fork')  # specific spawing method
 
     # point workdir to the correct folder
@@ -395,20 +417,19 @@ if __name__ == "__main__":
     inps = ctx.JoinableQueue()
 
     # cases
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "swa", False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-no-pinn", "raw", False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-no-pinn", "swa", False, False))
-    inps.put((topdir, "nl8-nn512-npts6400-no-pin", "raw", False, False))
-    inps.put((topdir, "nl8-nn512-npts6400-no-pin", "swa", False, False))
-    inps.put((topdir, "nl8-nn512-npts50000-no-pinn", "raw", True, True))
-    inps.put((topdir, "nl8-nn512-npts50000-no-pinn", "swa", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady-petibm", "raw", True, True))
+
+    inps.put((topdir, "nl6-nn512-npts6400-steady-noscale", "raw", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady-noscale", "raw", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady-noscale-conv", "raw", True, True))
+    inps.put((topdir, "nl6-nn512-npts6400-unsteady-petibm-noscale", "raw", True, True))
 
     # spawning processes
     procs = []
-    for m in range(ctx.cpu_count()//4):
+    os.environ["OMP_NUM_THREADS"] = f"{multiprocessing.cpu_count()//4}"  # limit threads per process
+    for m in range(4):
         proc = ctx.Process(target=worker, args=(inps, m))
         proc.start()
         procs.append(proc)
