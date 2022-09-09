@@ -45,12 +45,6 @@ def get_computational_graph(cfg: _ModulusConfig):
     """Returns the computational graph as a list of nodes.
     """
 
-    # set up scales
-    scales = dict({key: process_domain(cfg.custom[key]) for key in ["x", "y", "t"]})
-
-    # fixed! that `scale` is not defined by (min, max) but (min, length)
-    scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
-
     # set up periodicity
     try:
         periodicity = {key: process_domain(cfg.custom[key]) for key in cfg.custom.periodic}
@@ -60,7 +54,7 @@ def get_computational_graph(cfg: _ModulusConfig):
     pde = NavierStokes(cfg.custom.nu, cfg.custom.rho, 2, True)
 
     net = _FullyConnectedArch(
-        input_keys=[_Key(key, scale=scales[key]) for key in ["x", "y", "t"]],
+        input_keys=[_Key(key) for key in ["x", "y", "t"]],
         output_keys=[_Key("u"), _Key("v"), _Key("p")],
         periodicity=periodicity,
         activation_fn=get_activation_fn(cfg.custom.activation),
