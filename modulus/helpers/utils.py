@@ -400,7 +400,7 @@ def log_parser(casedir):
             if results[0][0] == "0":
                 results[0] = (int(0), float(results[0][1]), 0.0)
             else:
-                results[0] = (int(results[0][0]),float(results[0][1]), float(results[0][2]))
+                results[0] = (int(results[0][0]), float(results[0][1]), float(results[0][2]))
 
             # old pattern records time per iteration; change to elapsed time
             for i, result in zip(range(1, len(results)), results[1:]):

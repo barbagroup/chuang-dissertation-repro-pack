@@ -98,24 +98,16 @@ def create_plot(workdir, cases, figdir):
         walltimes.append(walltime)
         ncells.append(ncell)
 
-    fig = pyplot.figure(figsize=(6.5, 3))
-    fig.suptitle(r"PetIBM: spatial-temporal error of $u$")
-    gs = fig.add_gridspec(1, 2)
+    fig = pyplot.figure(figsize=(3, 3))
+    fig.suptitle(r"PetIBM, 2D TGV, $Re=100$")
+    gs = fig.add_gridspec(1, 1)
 
     ax1 = fig.add_subplot(gs[0, 0])
-    ax1.set_title("Error v.s. run time")
-    ax1.set_xlabel("Run time (hours)")
-    ax1.set_ylabel(r"Spatial-temporal $L_2$ error of $u$")
+    ax1.set_title(r"$L_{2,sp-t}$ v.s. time-to-solution")
+    ax1.set_xlabel("Run time (seconds)")
+    ax1.set_ylabel(r"Spatial-temporal error ($L_{2,sp-t}$) of $u$")
     ax1.grid()
     ax1.loglog(walltimes, errs)
-
-    ax2 = fig.add_subplot(gs[0, 1], sharey=ax1)
-    ax2.set_title("Order of error convergence")
-    ax2.set_xlabel(r"$\sqrt[3]{\mathrm{Number\ of\ spatial-temporal\ cells}}$")
-    ax2.grid()
-    ax2.loglog(ncells, errs, label="Simulation error")
-    ax2.loglog([ncells[2], ncells[2]*4], [errs[2]*0.6, errs[2]*0.6/16], label="2nd-order ref.", ls="--")
-    ax2.legend(loc=0)
 
     # save
     fig.savefig(figdir.joinpath("tgv-2d-re100-err-u.png"))

@@ -78,7 +78,7 @@ def create_err_arch_boxplot(figdir):
         grid=False, medianprops={"ls": "none"}, boxprops={"color": "k"}, whiskerprops={"color": "k"}
     )
     ax.set_xlabel(r"$(N_l, N_n)$")
-    ax.set_ylabel(r"$L_2$ error")
+    ax.set_ylabel(r"$L_{2,sp-t}$ error")
     ax.set_yscale("log")
 
     figdir.joinpath("err-vs-model-complexity").mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ def create_err_dof_boxplot(figdir):
 
     ax.set_xlabel("Degree of freedom")
     ax.set_xscale("log")
-    ax.set_ylabel(r"$L_2$ error")
+    ax.set_ylabel(r"$L_{2,sp-t}$ error")
     ax.set_yscale("log")
 
     figdir.joinpath("err-vs-model-complexity").mkdir(parents=True, exist_ok=True)

@@ -55,12 +55,12 @@ def plot_error_loss_scatter(figdir):
     times, errs, ccodes = _get_data("cyclic-annealing", cmap, times, errs, ccodes)
 
     fig = pyplot.figure(figsize=(6.5, 4))
-    fig.suptitle(r"$L_2$ error v.s. run time")
+    fig.suptitle(r"$L_{2,sp-t}$ error v.s. run time")
     gs = fig.add_gridspec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
     ax.set_xlabel("Run time (hours)")
-    ax.set_ylabel(r"$L_2$ error")
+    ax.set_ylabel(r"$L_{2,sp-t}$ error")
     ax.set_yscale("log")
 
     scatter = ax.scatter(times, errs, c=ccodes, s=75, cmap="tab20", alpha=0.6, marker="o")

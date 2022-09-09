@@ -41,7 +41,6 @@ def get_casedata(workdir, casename, mtype, rank=0):
     # cases solving steady N-S equation
     steadycases = [
         "nl6-nn512-npts6400-steady",
-        "nl6-nn512-npts6400-steady-noscale",
     ]
 
     # files, directories, and paths
@@ -68,13 +67,16 @@ def get_casedata(workdir, casename, mtype, rank=0):
 
     # extra configurations
     cfg.device = "cpu"
-    cfg.eval_times = [float(val) for val in range(135, 156, 1)]
+    cfg.eval_times = list(set(
+        [float(val) for val in range(0, 201, 10)] +
+        [float(val) for val in range(135, 156, 1)]
+    ))
     cfg.nx = 400  # number of cells in x direction
     cfg.ny = 200  # number of cells in y direction
     cfg.nr = 720  # number of cells on cylinder surface
 
-    if "noscale" in casename:
-        cfg.custom.scaling = False
+    # no scaling for re200
+    cfg.custom.scaling = False
 
     # whether the model and graph should have the variable `t`
     unsteady = casename not in steadycases
@@ -421,15 +423,10 @@ if __name__ == "__main__":
     inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", True, True))
     inps.put((topdir, "nl6-nn512-npts6400-unsteady-petibm", "raw", True, True))
 
-    inps.put((topdir, "nl6-nn512-npts6400-steady-noscale", "raw", True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady-noscale", "raw", True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady-noscale-conv", "raw", True, True))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady-petibm-noscale", "raw", True, True))
-
     # spawning processes
     procs = []
-    os.environ["OMP_NUM_THREADS"] = f"{multiprocessing.cpu_count()//4}"  # limit threads per process
-    for m in range(4):
+    os.environ["OMP_NUM_THREADS"] = f"{multiprocessing.cpu_count()//2}"  # limit threads per process
+    for m in range(2):
         proc = ctx.Process(target=worker, args=(inps, m))
         proc.start()
         procs.append(proc)

@@ -66,14 +66,14 @@ def plot_error_loss_scatter(figdir):
     loss = [val**0.5 for val in loss]
 
     fig = pyplot.figure(figsize=(6.5, 4))
-    fig.suptitle(r"$L_2$ error v.s. aggregated loss")
+    fig.suptitle(r"$L_{2,sp-t}$ error v.s. aggregated loss")
     gs = fig.add_gridspec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
     ax.set_xlabel(r"$\sqrt{\mathrm{Aggregate\ loss}}$")
     ax.set_xlim(1e-3, 2e0)
     ax.set_xscale("log")
-    ax.set_ylabel(r"$L_2$ error")
+    ax.set_ylabel(r"$L_{2,sp-t}$ error")
     ax.set_yscale("log")
     ax.set_aspect("equal")
 

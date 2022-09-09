@@ -33,10 +33,10 @@ def _plot_lr(figdir):
     clr = cyclic_exp_range(steps, 0.999989, 0.0015, 0.000015, 5000)
     elr = tf_exponential(steps, 0.95, 5000, 1e-3)
 
-    fig = pyplot.figure(figsize=(3.25, 2.5))
+    fig = pyplot.figure(figsize=(4.0, 2.0))
     fig.suptitle("Learning rate history of cyclic and exponential LR")
     ax = fig.gca()
-    ax.semilogy(steps, clr, lw=1.5, alpha=0.8, label="Cyclic LR")
+    ax.semilogy(steps, clr, lw=1.5, alpha=0.8, label="Cyclical LR")
     ax.semilogy(steps, elr, lw=1.5, alpha=0.8, label="Exponential LR")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Learning rate")
@@ -58,7 +58,7 @@ def _plot_loss_err_vs_steps(arch, clogdata, elogdata, crh5data, csh5data, eh5dat
 
     fig = pyplot.figure(figsize=(6.5, 3.3))
     fig.suptitle(r"TGV 2D, $Re=100$, training hist., cyclic training")
-    gs = fig.add_gridspec(1, 2, width_ratios=[0.79, 0.21])
+    gs = fig.add_gridspec(1, 2, width_ratios=[0.75, 0.25])
 
     ax = fig.add_subplot(gs[0, 0])
     ax.set_title(rf"$(N_l, N_n, N_{{bs}})=({nl}, {nn}, {nbs})$")
@@ -91,13 +91,13 @@ def _plot_loss_err_vs_steps(arch, clogdata, elogdata, crh5data, csh5data, eh5dat
 
     # put legend in the second and invicid axes
     lax = fig.add_subplot(gs[0, 1])
-    labels = ["Exponential", "Cyclic"]
+    labels = ["Exponential", "Cyclical"]
     lgds = [
         lax.legend(lloss, labels, title="Loss", loc="upper right", bbox_to_anchor=(1.0, 1.0)),
         lax.legend(times, labels, title="Run time", loc="upper right", bbox_to_anchor=(1.0, 0.78)),
     ]
 
-    labels += ["Cyclic (SWA)"]
+    labels += ["Cyclical (SWA)"]
     lgds += [
         lax.legend(lu0, labels, title=r"$L_2$ err., $u$, $t=0$", loc="upper right", bbox_to_anchor=(1.0, 0.56)),
         lax.legend(lu40, labels, title=r"$L_2$ err., $u$, $t=40$", loc="upper right", bbox_to_anchor=(1.0, 0.27))
@@ -136,7 +136,7 @@ def _plot_final_spatial_temporal_err(archs, coutdir, eoutdir, figdir):
             edatav.append(float(h5file["sterrs/v/l2norm"][...]))
 
     fig = pyplot.figure(figsize=(6.5, 3))
-    fig.suptitle(r"Cyclic LR and SWA: spatial-temporal error comparisons")
+    fig.suptitle(r"Cyclical LR and SWA: spatial-temporal error comparisons")
     gs = fig.add_gridspec(2, 2, height_ratios=[0.9, 0.1])
 
     axu = fig.add_subplot(gs[0, 0])
@@ -162,7 +162,7 @@ def _plot_final_spatial_temporal_err(archs, coutdir, eoutdir, figdir):
 
     lax = fig.add_subplot(gs[1, :])
     lax.legend(
-        [bar1, bar2, bar3], ["Exponential LR", "Cyclic LR", "Cyclic LR (SWA)"],
+        [bar1, bar2, bar3], ["Exponential LR", "Cyclical LR", "Cyclical LR (SWA)"],
         loc="center", ncol=3, columnspacing=5
     )
     lax.axis("off")

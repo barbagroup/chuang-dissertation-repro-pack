@@ -29,7 +29,7 @@ def _plot_lr(figdir):
     lr2 = cyclic_exp_range(steps, 0.99998, 1e-2, 1e-6, 5000)
 
     fig = pyplot.figure(figsize=(5, 2.5))
-    fig.suptitle("Cyclic learning rate history")
+    fig.suptitle("Cyclical learning rate history")
     ax = fig.gca()
     ax.semilogy(steps, lr2, lw=1.5, alpha=0.7, label="Large cycle")
     ax.semilogy(steps, lr1, lw=1.5, alpha=0.7, label="Small cycle")
