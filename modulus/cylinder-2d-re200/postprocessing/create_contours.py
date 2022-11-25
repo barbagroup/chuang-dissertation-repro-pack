@@ -199,8 +199,8 @@ def three_cols_plot(workdir, petibmdir, figdir, time):
         axs[1, 1].sharey(axs[1, 0])
         axs[2, 1].sharey(axs[2, 0])
 
-        axs[0, 0].set_title(r"$u$")
-        axs[0, 1].set_title(r"$v$")
+        axs[0, 0].set_title(fields[0])
+        axs[0, 1].set_title(fields[1])
         axs[0, 0].set_ylabel("PetIBM\n"+r"$y$")
         axs[1, 0].set_ylabel("Unsteady PINN\n"+r"$y$")
         axs[2, 0].set_ylabel("Data-driven PINN\n"+r"$y$")
