@@ -73,6 +73,10 @@ def get_petibm_data(casedir, fields, time, surfx, surfy, cache=None):
         with h5py.File(casedir.joinpath("output", f"{fno:07d}.h5"), "r") as h5file:
             data = h5file[f"{field}"][...]
 
+            # pressure has free shift because all-neuman bcs
+            if field == "p":
+                data -= data.mean()
+
         # get coordinates
         with h5py.File(casedir.joinpath("output", "grid.h5"), "r") as h5file:
             x = h5file[f"{field}/x"][...]
@@ -95,29 +99,40 @@ def get_petibm_data(casedir, fields, time, surfx, surfy, cache=None):
 
             # get indices that are inside the support windows
             cache[field]["idx"] = (
-                (x <= (surfx.max() + 3 * dx)) &
-                (x >= (surfx.min() - 3 * dx)) &
-                (y <= (surfy.max() + 3 * dy)) &
-                (y >= (surfy.min() - 3 * dy))
+                (x <= (surfx.max() + 3 * dx)) & (x >= (surfx.min() - 3 * dx)) &
+                (y <= (surfy.max() + 3 * dy)) & (y >= (surfy.min() - 3 * dy))
             )
 
             # get grid point around cylinder
             x = x[cache[field]["idx"]].reshape(-1, 1)
             y = y[cache[field]["idx"]].reshape(-1, 1)
 
-            cache[field]["delta"] = dirac(x-surfx, dx) * dirac(y-surfy, dy)
+            # shift surface coordinates for pressure a bit due to diffusice IBM
+            if field == "p":
+                thetas = numpy.angle(surfx + surfy * 1j)
+                dr = (dx**2 + dy**2)**0.5
+                cache[field]["delta"] = \
+                    dirac(x-surfx-1.0*dr * numpy.cos(thetas), dx) * \
+                    dirac(y-surfy-1.0*dr * numpy.sin(thetas), dy)
+            else:
+                cache[field]["delta"] = dirac(x-surfx, dx) * dirac(y-surfy, dy)
+
             cache[field]["dxdy"] = dx * dy
 
-        # interpolate to surface using the dirac function
+        # apply delta integration the dirac function
         preds[field] = (
             cache[field]["delta"] * data[cache[field]["idx"]].reshape(-1, 1)
         ).sum(axis=0) * cache[field]["dxdy"]
+
+        # apply moving average
+        nhalfw = 2
+        preds[field][nhalfw:-nhalfw] = numpy.convolve(preds[field], numpy.ones(2*nhalfw+1)/(2*nhalfw+1), "valid")
 
     return preds
 
 
 # %% get_pinn_data
-def get_pinn_data(model, fields, time, surfx, surfy):
+def get_pinn_data(model, fields, time, surfx, surfy, px, py):
     """Get surface data from PINN.
     """
 
@@ -125,6 +140,13 @@ def get_pinn_data(model, fields, time, surfx, surfy):
     kwargs = {
         "dtype": next(model.parameters()).dtype,
         "device": "cpu", "requires_grad": True}
+
+    # get pressure shift
+    pshift = model({
+        "x": torch.tensor(px.reshape(-1, 1), **kwargs),
+        "y": torch.tensor(py.reshape(-1, 1), **kwargs),
+        "t": torch.full((px.size, 1), time, **kwargs)
+    })["p"].detach().cpu().numpy().mean()
 
     # convert numpy coordinates to torch
     surfx = torch.tensor(surfx.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
@@ -141,6 +163,8 @@ def get_pinn_data(model, fields, time, surfx, surfy):
         field: val.detach().cpu().numpy().flatten()
         for field, val in preds.items()
     }
+
+    preds["p"] -= pshift
 
     return preds
 
@@ -177,10 +201,10 @@ if __name__ == "__main__":
     _datafile = _pinndir.parent.joinpath("data", "surface_data.h5")
 
     # %% case configuration
-    _fields = ["u", "v", "p", "vorticity_z"]
+    _fields = ["u", "v", "p"]
     _device = "cpu"
     _times = list(float(val) for val in numpy.linspace(135, 145, 21))
-    _nths = 720  # number of cells on cylinder surface
+    _nths = 360  # number of cells on cylinder surface
     _radius = 0.5
     _thetas = numpy.linspace(0., numpy.pi*2., _nths, endpoint=False)
     _surfx = _radius * numpy.cos(_thetas)
@@ -195,6 +219,10 @@ if __name__ == "__main__":
 
     # %% get PINN model
     _model = get_pinn_model(_pinndir, 1000000, _fields)
+
+    # %% get PetIBM's pressure coordinate for PINN to evaluate free shifting
+    with h5py.File(_petibmdir.joinpath("output", "grid.h5"), "r") as _dset:
+        _px, _py = numpy.meshgrid(_dset["p/x"][...], _dset["p/y"][...])
 
     # %% predict and save
     _cache = {}
@@ -211,7 +239,7 @@ if __name__ == "__main__":
                 )
 
         # get pinn data
-        _data = get_pinn_data(_model, _fields, _time, _surfx, _surfy)
+        _data = get_pinn_data(_model, _fields, _time, _surfx, _surfy, _px, _py)
 
         for _field, _val in _data.items():
             with h5py.File(_datafile, "r+") as _dset:
