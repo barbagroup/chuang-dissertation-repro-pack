@@ -26,10 +26,10 @@ print('Initial time interval: {}'.format(time_limits))
 mask = numpy.where((data[:, 0] >= time_limits[0]) & (data[:, 0] <= time_limits[1]))[0]
 
 # Compute the minima and maxima of the lift coefficient.
-idx_min = signal.argrelextrema(data[:, 1], numpy.less_equal, order=5)[0][:-1]
+idx_min = signal.argrelextrema(data[:, 2], numpy.less_equal, order=5)[0]
 idx_min = numpy.intersect1d(idx_min, mask, assume_unique=True)
-print('min(CL) = {}'.format(data[idx_min, 1]))
-idx_max = signal.argrelextrema(data[:, 2], numpy.greater_equal, order=5)[0][:-1]
+print('min(CL) = {}'.format(data[idx_min, 2]))
+idx_max = signal.argrelextrema(data[:, 2], numpy.greater_equal, order=5)[0]
 idx_max = numpy.intersect1d(idx_max, mask, assume_unique=True)
 print('max(CL) = {}'.format(data[idx_max, 2]))
 
@@ -48,7 +48,7 @@ cl2 = data[:, 2][idx_min[0]:idx_max[-1] + 1]
 rms = numpy.sqrt(numpy.mean(numpy.square(cl2)))
 print('rms(CL) = {:.4f}'.format(rms))
 
-# Compute the Strouhal number.
+# Compute the Strouhal number using lift coefficient.
 dt = data[1, 0] - data[0, 0]
 fft = scipy.fft.fft(cl2)
 freqs = fftpack.fftfreq(len(cl2), dt)
