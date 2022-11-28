@@ -17,4 +17,5 @@
 **/figures
 **/logs
 **/tables
+**/data/*.h5
 petibm/tgv-3d-re1600/*.png

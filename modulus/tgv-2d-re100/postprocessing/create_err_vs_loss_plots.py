@@ -70,10 +70,11 @@ def plot_error_loss_scatter(figdir):
     gs = fig.add_gridspec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
-    ax.set_xlabel(r"$\sqrt{\mathrm{Aggregate\ loss}}$")
+    ax.set_xlabel(r"$\sqrt{\mathrm{Aggregated\ loss}}$")
     ax.set_xlim(1e-3, 2e0)
     ax.set_xscale("log")
     ax.set_ylabel(r"$L_{2,sp-t}$ error")
+    ax.set_ylim(7e-3, 1e0)
     ax.set_yscale("log")
     ax.set_aspect("equal")
 
