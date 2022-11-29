@@ -40,7 +40,7 @@ def get_petibm_data(casedir, fields, time, xlim, ylim, cache=None):
     # convert time to filename index
     fno = int(time/cfg.parameters.dt+0.5)
 
-    print(f"Predicting PetIBM surface data at t={time}, fno={fno}")
+    print(f"Predicting PetIBM vicinity data at t={time}, fno={fno}")
     preds = {}
 
     if cache is None:
@@ -79,7 +79,7 @@ def get_petibm_data(casedir, fields, time, xlim, ylim, cache=None):
 
 # %% get_pinn_data
 def get_pinn_data(model, fields, time, x, y, bsize=8192):
-    """Get surface data from PINN.
+    """Get vicinity data from PINN.
     """
 
     # torch version of gridlines; reshape to N by 1
@@ -146,8 +146,8 @@ if __name__ == "__main__":
     _petibmdir = _projdir.joinpath("petibm", "cylinder-2d-re200")
 
     # data file
-    _pinndir.parent.joinpath("data").mkdir(exist_ok=True)
-    _datafile = _pinndir.parent.joinpath("data", "refined_region.h5")
+    _pinndir.parent.joinpath("outputs").mkdir(exist_ok=True)
+    _datafile = _pinndir.parent.joinpath("outputs", "refined_region.h5")
 
     # %% case configuration
     _fields = ["u", "v", "p", "vorticity_z", "qcriterion", "continuity", "momentum_x", "momentum_y"]
