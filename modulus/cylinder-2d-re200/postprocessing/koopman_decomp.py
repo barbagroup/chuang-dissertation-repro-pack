@@ -503,7 +503,7 @@ def get_pinn_modes(datadir, outfile, lims, res, radius):
 # %% main function
 if __name__ == "__main__":
 
-    _outfile = pathlib.Path(__file__).resolve().parents[1].joinpath("data", "koopman.h5")
+    _outfile = pathlib.Path(__file__).resolve().parents[1].joinpath("outputs", "koopman.h5")
     _outfile.parent.mkdir(parents=True, exist_ok=True)
 
     # some parameters

@@ -18,7 +18,7 @@ from matplotlib import pyplot
 projdir = pathlib.Path(__file__).resolve().parents[3]
 casedir = projdir.joinpath("modulus", "cylinder-2d-re200", "nl6-nn512-npts6400-unsteady-petibm")
 figdir = projdir.joinpath("modulus", "cylinder-2d-re200", "figures", "surface")
-datafile = projdir.joinpath("modulus", "cylinder-2d-re200", "data", "surface_data.h5")
+datafile = projdir.joinpath("modulus", "cylinder-2d-re200", "outputs", "surface_data.h5")
 
 # unified figure style
 pyplot.style.use(projdir.joinpath("resources", "figstyle"))

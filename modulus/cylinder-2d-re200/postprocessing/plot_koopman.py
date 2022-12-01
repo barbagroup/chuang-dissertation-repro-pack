@@ -44,7 +44,7 @@ def plot_eigval_cmplx_dist(eigvals, energys, figdir):
     )  # excluding the steady mode
     cmap = pyplot.get_cmap("inferno_r")
 
-    fig = pyplot.figure(figsize=(6.5, 3))
+    fig = pyplot.figure(figsize=(6.5, 3.25))
     gs = fig.add_gridspec(1, 3, width_ratios=(10, 10, 1))
 
     for i in range(2):
@@ -65,17 +65,21 @@ def plot_eigval_cmplx_dist(eigvals, energys, figdir):
             ha="center", va="center", fontsize=10,
             arrowprops={"arrowstyle": "->", "connectionstyle": "arc3"}
         )
-        ax.set_xlabel(r"$\mathfrak{Re}(\lambda)$")
-        ax.set_ylabel(r"$\mathfrak{Im}(\lambda)$")
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
         ax.set_aspect("equal", "box")
+        ax.set_xlabel(r"$\mathfrak{Re}(\lambda_j)$")
+
+        if i == 0:
+            ax.set_ylabel(r"$\mathfrak{Im}(\lambda_j)$")
+        else:
+            ax.get_yaxis().set_ticks([])
         ax.set_title(solvers[i])
 
     cax = fig.add_subplot(gs[0, 2])
-    fig.colorbar(cm.ScalarMappable(norm, cmap), cax=cax, label="Koopman mode strength")
+    fig.colorbar(cm.ScalarMappable(norm, cmap), cax=cax, label="Normalized mode strength")
 
-    fig.suptitle(r"Koopman eigenvalues, $\lambda$")
+    fig.suptitle(r"Koopman eigenvalues, $\lambda_j$")
     fig.savefig(figdir.joinpath("koopman_eigenvalues_complex.png"))
     pyplot.close(fig)
 
@@ -118,7 +122,7 @@ def plot_mode_strengths(freqs, energys, dt, figdir):
         ax = fig.add_subplot(gs[0, i])
         ax.bar(freqs[i], energys[i], 0.05, color=cs, edgecolor="k", lw=0.2)
         ax.set_xlabel(r"Strouhal number ($St$)")
-        ax.set_ylabel("Mode strength (normalized)")
+        ax.set_ylabel("Normalized mode strength")
         ax.set_xlim(-0.1, fastest + 0.1)
         ax.set_ylim(1e-4, 1.1)
         ax.set_title(solvers[i])
@@ -218,7 +222,7 @@ def plot_modes(h5grp, solver, figdir, npics=5):
 if __name__ == "__main__":
 
     # directories and paths
-    _outfile = pathlib.Path("/mnt/user/koopman.h5")
+    _outfile = pathlib.Path(__file__).resolve().parents[1].joinpath("outputs", "koopman.h5")
     _figdir = _projdir.joinpath("modulus", "cylinder-2d-re200", "figures", "koopman")
     _figdir.mkdir(exist_ok=True)
 

@@ -197,8 +197,8 @@ if __name__ == "__main__":
     _petibmdir = _projdir.joinpath("petibm", "cylinder-2d-re200")
 
     # data file
-    _pinndir.parent.joinpath("data").mkdir(exist_ok=True)
-    _datafile = _pinndir.parent.joinpath("data", "surface_data.h5")
+    _pinndir.parent.joinpath("outputs").mkdir(exist_ok=True)
+    _datafile = _pinndir.parent.joinpath("outputs", "surface_data.h5")
 
     # %% case configuration
     _fields = ["u", "v", "p"]
