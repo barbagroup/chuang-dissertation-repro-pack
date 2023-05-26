@@ -62,3 +62,4 @@ custom:
   nu: 0.01
   rho: 1.0
   activation: silu
+  scaling: True

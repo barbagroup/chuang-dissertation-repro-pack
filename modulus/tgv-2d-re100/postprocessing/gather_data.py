@@ -100,7 +100,7 @@ def get_casedata(casedir, mtype, rank=0):
 
     # extra configurations
     cfg.device = "cpu"
-    cfg.eval_times = [0., 40., 80.]
+    cfg.eval_times = [0., 40.]
     cfg.nx = 512  # number of cells in x direction
     cfg.ny = 512  # number of cells in y direction
     cfg.nt = 100  # number of cells in y direction
@@ -141,10 +141,6 @@ def get_snapshots(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disa
 
     # torch version of gridlines; reshape to N by 1
     kwargs = {"dtype": dtype, "device": cfg.device, "requires_grad": True}
-    invars = {
-        "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
-        "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
-    }
 
     # snapshot data holder (for contour plotting)
     h5file.create_dataset("field/x", data=npx, **h5kwargs)
@@ -157,7 +153,12 @@ def get_snapshots(cfg, graph, fields, h5file, h5kwargs, rank=0):  # pylint: disa
         # make and get a subgroup using the time as its name
         grp = h5file.create_group(f"field/{time}")
 
+        invars = {
+            "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+            "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+        }
         invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
+
         preds = model(invars)
         preds = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
 
@@ -422,7 +423,7 @@ def process_single_case(
 
         if walltimeerr:
             fields = ["u", "v"]  # fields of our interest
-            cfg.eval_times = [0., 40., 80.]
+            cfg.eval_times = [0., 40.]
             _del_key("walltime")
             h5file = get_walltime_errs(cfg, graph, fields, mtype, h5file, h5kwargs, rank)
 
@@ -453,68 +454,14 @@ if __name__ == "__main__":
 
     # the input queue
     inps = ctx.JoinableQueue()
-
-    # base cases
-    layers = [1, 2, 3]
-    neurons = [16, 32, 64, 128, 256]
-    nbss = [1024, 2048, 4096, 8192, 16384, 32768, 65536]
-    basename = "base-cases"
-    for nl, nn, nbs in itertools.product(layers, neurons, nbss):
-        cname = f"nl{nl}-nn{nn}-npts{nbs}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-    # scaling test: exp-sum-scaling
-    basename = "exp-sum-scaling"
-    for ngpus in [1, 2, 4, 8]:
-        cname = f"nl3-nn128-npts8192-ngpus{ngpus}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-        cname = f"nl2-nn32-npts8192-ngpus{ngpus}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-    cname = "nl2-nn32-npts16384-ngpus4"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-    cname = "nl2-nn32-npts32768-ngpus2"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-    cname = "nl2-nn32-npts65536-ngpus1"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-    cname = "nl3-nn128-npts16384-ngpus4"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-    cname = "nl3-nn128-npts32768-ngpus2"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-    cname = "nl3-nn128-npts65536-ngpus1"
-    inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-    # exp-annealing
-    basename = "exp-annealing"
-    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
-        cname = f"nl{nl}-nn{nn}-npts{nbs}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-
-    # cyclic-sum
-    basename = "cyclic-sum"
-    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
-        cname = f"nl{nl}-nn{nn}-npts{nbs}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
-
-    # cyclic-annealing
-    basename = "cyclic-annealing"
-    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
-        cname = f"nl{nl}-nn{nn}-npts{nbs}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
-        inps.put((topdir, topdir.joinpath(basename, cname), "swa", False, False, False, False))
-
-    # ncg-sum
-    basename = "ncg-sum"
-    for nl, nn, nbs in [(1, 16, 8192), (2, 32, 8192), (3, 128, 8192)]:
-        cname = f"nl{nl}-nn{nn}-npts{nbs}"
-        inps.put((topdir, topdir.joinpath(basename, cname), "raw", False, False, False, False))
+    inps.put((topdir, topdir.joinpath("base-cases", "nl3-nn128-npts8192"), "raw", False, False, True, False))
+    inps.put((topdir, topdir.joinpath("base-cases", "nl3-nn256-npts4096"), "raw", True, False, False, False))
+    inps.put((topdir, topdir.joinpath("cyclic-sum", "nl3-nn128-npts8192"), "raw", False, False, True, False))
 
     # spawning processes
     procs = []
-    for m in range(ctx.cpu_count()//4):
+    # for m in range(ctx.cpu_count()//4):
+    for m in range(1):  # not parallelizng because out-of-memory on the personal latptop
         proc = ctx.Process(target=worker, args=(inps, m))
         proc.start()
         procs.append(proc)

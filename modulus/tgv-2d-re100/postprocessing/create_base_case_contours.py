@@ -19,6 +19,14 @@ from matplotlib import ticker
 pyplot.style.use(pathlib.Path(__file__).resolve().parents[3].joinpath("resources", "figstyle"))
 
 
+class CustomCBarFormat(ticker.ScalarFormatter):
+    def __init__(self, useOffset=None, useMathText=None, useLocale=None):
+        super().__init__(useOffset, useMathText, useLocale)
+
+    def _set_format(self):
+        # docstring inherited
+        self.format = "%1.1f"
+
 def create_base_case_contours(outdir, figdir, arch, time):
     """Plot contours.
     """
@@ -60,8 +68,7 @@ def create_base_case_contours(outdir, figdir, arch, time):
     vals[r"$p$"] = vals[r"$p$"] - vals[r"$p$"].mean()
     errs[r"$p$"] = abs(vals[r"$p$"] - ptrue)
 
-    fig = pyplot.figure(figsize=(6.5, 9))
-    fig.suptitle(rf"TGV 2D@$t={float(time)}$, $Re=100$, $(N_l, N_n, N_{{bs}})=({nl}, {nn}, {nbs})$")
+    fig = pyplot.figure(figsize=(3.75, 6.0), frameon=False)
     gs = fig.add_gridspec(4, 2)
 
     for i, ((field, err), val, lvl) in enumerate(zip(errs.items(), vals.values(), lvls.values())):
@@ -71,7 +78,9 @@ def create_base_case_contours(outdir, figdir, arch, time):
         axf.set_aspect("equal")
         axf.set_title(field)
         axf.set_ylabel(r"$y$")
-        fig.colorbar(ct, ax=axf, extend="both")
+        cbar = fig.colorbar(ct, ax=axf, extend="both", format=CustomCBarFormat(True))
+        cbar.formatter.set_powerlimits((0, 0))
+        cbar.ax.yaxis.set_offset_position("left")
 
         # errors
         axerr = fig.add_subplot(gs[i, 1])
@@ -84,8 +93,13 @@ def create_base_case_contours(outdir, figdir, arch, time):
             axf.set_xlabel(r"$x$")
             axerr.set_xlabel(r"$x$")
 
+    fig.set_constrained_layout_pads(w_pad=0, h_pad=0.03, hspace=0, wspace=0)
+
     figdir.joinpath("contours").mkdir(parents=True, exist_ok=True)
-    pyplot.savefig(figdir.joinpath("contours", f"nl{nl}-nn{nn}-npts{nbs}-t{time}.png"))
+    pyplot.savefig(
+        figdir.joinpath("contours", f"nl{nl}-nn{nn}-npts{nbs}-t{time}.png"),
+        bbox_inches="tight"
+    )
 
 
 if __name__ == "__main__":
@@ -94,6 +108,4 @@ if __name__ == "__main__":
     _figdir = _projdir.joinpath("figures")
     _figdir.mkdir(parents=True, exist_ok=True)
 
-    create_base_case_contours(_outdir, _figdir, (1, 32, 16384), "40.0")
-    create_base_case_contours(_outdir, _figdir, (2, 32, 65536), "40.0")
     create_base_case_contours(_outdir, _figdir, (3, 256, 4096), "40.0")
