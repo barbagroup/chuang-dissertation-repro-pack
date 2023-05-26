@@ -11,31 +11,33 @@ by cases in the `modulus` folder.
 ## To use pre-generated data for plotting
 
 The figures in the paper can be re-plotted using pre-generated data.
-In other words, it's not necessary to re-run all cases to generate data.
+In other words, it's not necessary to re-run all cases if you just want to re-plot figures.
 
-First, if you have not done so, clone this repository, which contains only the scripts to run cases and post-processing:
+First, if you have not done so, clone this repository, which contains only the scripts to run cases
+and post-processing:
 ```
 $ git clone \
     --branch jcs-paper \
     https://github.com/barbagroup/chuang-dissertation-repro-pack.git \
     paper-repro-pack
 ```
-Note that we must use `jcs-paper` branch as this branch is specifically for this paper.
-We also renamed the local repo to `paper-repro-pack`.
-However, the renaming is just for our convenience.
+Note that we must use the `jcs-paper` branch as this branch is specifically for this paper.
+We also renamed the local repository to `paper-repro-pack`, though the renaming is just for our
+convenience.
 
-Download the data tarbal accroding to the reproducibility statement in the paper.
-And extract the tarbal content into the repro pack (e.g., `paper-repro-pack`) with
+Download the data tarball according to the reproducibility statement in the paper.
+(URL to be determined at this moment.)
+And extract the tarball content into the repro-pack (e.g., `paper-repro-pack`) with
 ```
-$ tar -xf <data tarbal name> -C paper-repro-pack --strip 1
+$ tar -xzvf <data tarbal name> -C paper-repro-pack --strip 1
 ```
-Then you should see folders like `outputs`, `output`, or `log` in each case folder, meaning data
-were extracted to the corresponding folders.
+Then you should see folders like `outputs`, `output`, or `logs` in each case folder, meaning data
+have been extracted to the corresponding folders.
 
 Finally, follow the section of creating figures in this README to re-plot the figures.
 
 
-## To generate data from scratch
+## To generate data from scratch for plotting
 
 ### To run cases under the `petibm` folder:
 
