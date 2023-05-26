@@ -24,3 +24,32 @@
      c. `modulus/cylinder-2d-re40/figures/surface-pressure.png`
      d. `modulus/cylinder-2d-re40/figures/contour-comparison.png`
   8. The TeX expression of the table will be saved to `modulus/cylinder-2d-re40/tables/drag-lift-coeff.tex`
+
+* Figure 10 - 16:
+  1. Execute `modulus/cylinder-2d-re200/postprocessing/gather_data.py` to post-process raw data
+  2. Execute `modulus/cylinder-2d-re200/postprocessing/create_training_hist.py`
+  3. Execute `modulus/cylinder-2d-re200/postprocessing/create_training_hist.py`
+  4. Execute `modulus/cylinder-2d-re200/postprocessing/create_contours.py`
+  7. The figures will be saved to:
+     a. `modulus/cylinder-2d-re200/figures/loss-hist.png`
+     b. `modulus/cylinder-2d-re200/figures/drag-lift-coeffs.png`
+     c. `modulus/cylinder-2d-re200/figures/contour-comparison-u.png`
+     d. `modulus/cylinder-2d-re200/figures/contour-comparison-v.png`
+     e. `modulus/cylinder-2d-re200/figures/contour-comparison-p.png`
+     f. `modulus/cylinder-2d-re200/figures/contour-comparison-omega_z.png`
+     g. `modulus/cylinder-2d-re200/figures/contour-comparison-steady.png`
+
+* Figure 17 - 18:
+  1. Execute `modulus/cylinder-2d-re200/postprocessing/gather_refined_data.py` to post-process raw data
+  2. Execute `modulus/cylinder-2d-re200/postprocessing/plot_refined_contourf.py`
+  7. The figures will be saved to:
+     a. `modulus/cylinder-2d-re200/figures/refined/vorticity_z.png`
+     b. `modulus/cylinder-2d-re200/figures/refined/qcriterion.png`
+
+* Figure 19, 20, and those in the appendix:
+  1. Execute `modulus/cylinder-2d-re200/postprocessing/koopman_decomp.py` to post-process raw data
+  2. Execute `modulus/cylinder-2d-re200/postprocessing/plot_koopman.py`
+  7. The figures will be saved to:
+     a. `modulus/cylinder-2d-re200/figures/koopman/koopman_eigenvalues_complex.png`
+     b. `modulus/cylinder-2d-re200/figures/koopman/koopman_mode_strength.png`
+     c. all other figures in `modulus/cylinder-2d-re200/figures/koopman`

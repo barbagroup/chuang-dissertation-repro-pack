@@ -22,7 +22,10 @@ pyplot.style.use(pathlib.Path(__file__).resolve().parents[3].joinpath("resources
 def plot_force_hist(workdir, petibmdir, figdir):
     """Plot a field of all cases at a single time.
     """
-    styles = (cycler("color", ["k"]+list(pyplot.cm.tab10.colors)[::4]) + cycler("ls", ["-", ":", "-.", "--"]))()
+    styles = (
+        cycler("color", ["k", "tab:blue", "tab:green", "tab:red"]) +
+        cycler("ls", ["-", ":", "-.", "--"])
+    )()
 
     cases = {
         "nl6-nn512-npts6400-steady": r"Steady PINN",
@@ -37,8 +40,7 @@ def plot_force_hist(workdir, petibmdir, figdir):
     # add PetIBM results
     petibm = numpy.loadtxt(petibmdir.joinpath("output", "forces-0.txt"), dtype=float)
 
-    fig = pyplot.figure(figsize=(6.5, 3.5))
-    fig.suptitle(r"Lift and drag coefficients, 2D cylinder flow, unsteady, $Re=200$")
+    fig = pyplot.figure(figsize=(3.75, 2.75))
     gs = fig.add_gridspec(1, 1)
     ax = fig.add_subplot(gs[0, 0])
 
@@ -66,15 +68,15 @@ def plot_force_hist(workdir, petibmdir, figdir):
 
         if case == "nl6-nn512-npts6400-unsteady-petibm":
             lines.append((
-                ax.plot(times[times >= 125], cd[times >= 125], lw=2, alpha=0.95, **style)[0],
-                ax.plot(times[times >= 125], cl[times >= 125], lw=2, alpha=0.95, **style)[0]
+                ax.plot(times[times >= 125], cd[times >= 125], lw=1, alpha=0.95, **style)[0],
+                ax.plot(times[times >= 125], cl[times >= 125], lw=1, alpha=0.95, **style)[0]
 
             ))
             labels.append(label)
         else:
             lines.append((
-                ax.plot(times, cd, lw=2, alpha=0.95, **style)[0],
-                ax.plot(times, cl, lw=2, alpha=0.95, **style)[0]
+                ax.plot(times, cd, lw=1, alpha=0.95, **style)[0],
+                ax.plot(times, cl, lw=1, alpha=0.95, **style)[0]
             ))
             labels.append(label)
 
@@ -82,8 +84,10 @@ def plot_force_hist(workdir, petibmdir, figdir):
     ax.set_xlabel(r"$t$")
     ax.set_ylim(-0.75, 1.75)
     ax.set_ylabel("$C_D$ and $C_L$")
-    ax.grid()
-    ax.legend(lines, labels, handler_map={tuple: HandlerTuple(ndivide=None)}, ncol=2, loc=0)
+    ax.legend(
+        lines, labels, handler_map={tuple: HandlerTuple(ndivide=None)}, ncol=2,
+        loc="upper center", bbox_to_anchor=(0.5, -0.25)
+    )
 
     # save
     fig.savefig(figdir.joinpath("drag-lift-coeffs.png"))

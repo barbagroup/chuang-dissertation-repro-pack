@@ -16,6 +16,7 @@ import h5py
 from matplotlib import pyplot
 from matplotlib import colors
 from matplotlib import cm
+from matplotlib import ticker
 
 # find helpers and locate workdir
 for _projdir in pathlib.Path(__file__).resolve().parents:
@@ -23,6 +24,15 @@ for _projdir in pathlib.Path(__file__).resolve().parents:
         break
 else:
     raise FileNotFoundError("Couldn't find module `helpers`.")
+
+
+class CustomCBarFormat(ticker.ScalarFormatter):
+    def __init__(self, useOffset=None, useMathText=None, useLocale=None):
+        super().__init__(useOffset, useMathText, useLocale)
+    
+    def _set_format(self):
+        # docstring inherited
+        self.format = "%1.1f"
 
 
 # %%
@@ -44,26 +54,26 @@ def plot_eigval_cmplx_dist(eigvals, energys, figdir):
     )  # excluding the steady mode
     cmap = pyplot.get_cmap("inferno_r")
 
-    fig = pyplot.figure(figsize=(6.5, 3.25))
-    gs = fig.add_gridspec(1, 3, width_ratios=(10, 10, 1))
+    fig = pyplot.figure(figsize=(3.75, 2.7))
+    gs = fig.add_gridspec(2, 2, height_ratios=(10, 1))
 
     for i in range(2):
         cs = cmap(norm(energys[i][:-1]))
         ax = fig.add_subplot(gs[0, i])
         ax.add_artist(pyplot.Circle((0., 0.), 1, fc="gainsboro", ec="k", lw=0.3))
         ax.scatter(  # only plot non-time-averaged mode
-            eigvals[i][:-1].real, eigvals[i][:-1].imag, s=30, c=cs,
-            edgecolors="k", linewidth=0.5, alpha=0.8,
+            eigvals[i][:-1].real, eigvals[i][:-1].imag, s=10, c=cs,
+            edgecolors="k", linewidth=0.2, alpha=0.9,
         )
         ax.scatter(
-            eigvals[i][-1].real, eigvals[i][-1].imag, s=80, marker="*",
-            c="crimson", alpha=0.9, ec="k", lw=0.5,
+            eigvals[i][-1].real, eigvals[i][-1].imag, s=20, marker="*",
+            c="crimson", alpha=0.9, ec="k", lw=0.2,
         )
         ax.annotate(
             "Steady mode\n" + rf"(strength: ${energys[i][-1]:.2f}$)",
             (eigvals[i][-1].real, eigvals[i][-1].imag), (0, 0.2),
-            ha="center", va="center", fontsize=10,
-            arrowprops={"arrowstyle": "->", "connectionstyle": "arc3"}
+            ha="center", va="center", fontsize=8,
+            arrowprops={"arrowstyle": "->", "connectionstyle": "arc3", "lw": 0.7}
         )
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
@@ -73,14 +83,17 @@ def plot_eigval_cmplx_dist(eigvals, energys, figdir):
         if i == 0:
             ax.set_ylabel(r"$\mathfrak{Im}(\lambda_j)$")
         else:
-            ax.get_yaxis().set_ticks([])
+            ax.get_yaxis().set_visible(False)
         ax.set_title(solvers[i])
 
-    cax = fig.add_subplot(gs[0, 2])
-    fig.colorbar(cm.ScalarMappable(norm, cmap), cax=cax, label="Normalized mode strength")
+    cax = fig.add_subplot(gs[1, :])
+    fig.colorbar(
+        cm.ScalarMappable(norm, cmap), cax=cax, label="Normalized mode strength",
+        orientation="horizontal")
 
-    fig.suptitle(r"Koopman eigenvalues, $\lambda_j$")
-    fig.savefig(figdir.joinpath("koopman_eigenvalues_complex.png"))
+    fig.set_constrained_layout_pads(w_pad=0, h_pad=0, hspace=0, wspace=0)
+
+    fig.savefig(figdir.joinpath("koopman_eigenvalues_complex.png"), bbox_inches="tight")
     pyplot.close(fig)
 
 
@@ -114,21 +127,24 @@ def plot_mode_strengths(freqs, energys, dt, figdir):
     )  # excluding the steady mode
     cmap = pyplot.get_cmap("YlOrRd")
 
-    fig = pyplot.figure(figsize=(6.5, 3))
-    gs = fig.add_gridspec(1, 3, width_ratios=(10, 10, 1))
+    fig = pyplot.figure(figsize=(3.75, 1.875))
+    gs = fig.add_gridspec(1, 2, width_ratios=(10, 10))
 
     for i in range(2):
         cs = cmap(norm(energys[i]))
         ax = fig.add_subplot(gs[0, i])
+        ax.set_title(solvers[i])
         ax.bar(freqs[i], energys[i], 0.05, color=cs, edgecolor="k", lw=0.2)
-        ax.set_xlabel(r"Strouhal number ($St$)")
-        ax.set_ylabel("Normalized mode strength")
+        ax.set_yscale("log")
         ax.set_xlim(-0.1, fastest + 0.1)
         ax.set_ylim(1e-4, 1.1)
-        ax.set_title(solvers[i])
-        ax.set_yscale("log")
 
-    fig.suptitle("Koopman modes strength")
+        ax.set_xlabel(r"Strouhal number ($St$)")
+        if i == 0:
+            ax.set_ylabel("Normalized mode strength")
+        else:
+            ax.get_yaxis().set_ticklabels([])
+
     fig.savefig(figdir.joinpath("koopman_mode_strength.png"))
     pyplot.close(fig)
 
@@ -162,8 +178,8 @@ def plot_modes(h5grp, solver, figdir, npics=5):
         elif freqs[idx] < 0:
             freqs[idx] = 0
 
-        fig = pyplot.figure(figsize=(6.5, 5.75))
-        gs = fig.add_gridspec(3, 2)
+        fig = pyplot.figure(figsize=(7.5, 4.5))
+        gs = fig.add_gridspec(2, 3)
 
         for i, field in enumerate(["u", "v", "p"]):
 
@@ -175,17 +191,19 @@ def plot_modes(h5grp, solver, figdir, npics=5):
             data = numpy.ma.array(data, mask=mask)
 
             # real part
-            ax = [fig.add_subplot(gs[i, 0]), fig.add_subplot(gs[i, 1])]
+            ax = [fig.add_subplot(gs[0, i]), fig.add_subplot(gs[1, i])]
             ax[0].set_title(rf"{names[field]}, $\mathfrak{{Re}}$")
             ax[1].set_title(rf"{names[field]}, $\mathfrak{{Im}}$")
 
             cs = ax[0].contourf(x, y, data.real, 128, cmap="turbo")
-            cbar = fig.colorbar(cs, ax=ax[0])
+            cbar = fig.colorbar(cs, ax=ax[0], format=CustomCBarFormat(True), orientation="horizontal")
+            cbar.formatter.set_powerlimits((0, 0))
             cbar.ax.yaxis.set_offset_position("left")
             cbar.update_ticks()
 
             cs = ax[1].contourf(x, y, data.imag, 128, cmap="turbo")
-            cbar = fig.colorbar(cs, ax=ax[1])
+            cbar = fig.colorbar(cs, ax=ax[1], format=CustomCBarFormat(True), orientation="horizontal")
+            cbar.formatter.set_powerlimits((0, 0))
             cbar.ax.yaxis.set_offset_position("left")
             cbar.update_ticks()
 
@@ -195,20 +213,19 @@ def plot_modes(h5grp, solver, figdir, npics=5):
                 ax[m].set_ylim(*lims[2:])
                 ax[m].set_aspect("equal", "box")
 
-                if i == 2:
-                    ax[m].set_xlabel(r"$x$")
+                if i == 0:
+                    ax[m].set_ylabel(r"$y$")
                 else:
-                    ax[m].set_xticks([])
+                    ax[m].yaxis.set_visible(False)
 
-            ax[0].set_ylabel(r"$y$")
-            ax[1].set_yticks([])
+            ax[0].xaxis.set_visible(False)
+            ax[1].set_xlabel(r"$x$")
 
-        fig.suptitle(
-            rf"{names[solver]}, $St\approx {freqs[idx]:.3f}$, "
-            rf"$\lambda \approx {eigvals[idx]:.1f}$, Strength$ \approx {energys[idx]:.1e}$"
-        )
+        fig.set_constrained_layout_pads(w_pad=0, h_pad=0, hspace=0, wspace=0)
 
-        fig.savefig(figdir.joinpath(f"koopman_{solver}_{k:03d}_st{freqs[idx]:.3f}.png"))
+        fig.savefig(
+            figdir.joinpath(f"koopman_{solver}_{k:03d}_st{freqs[idx]:.3f}.png"),
+            bbox_inches="tight")
         pyplot.close()
         print(f"Done plotting the contour of mode St={freqs[idx]:.3f}")
 
@@ -248,5 +265,5 @@ if __name__ == "__main__":
 
     # %% plot modes' contours
     with h5py.File(_outfile, "r") as h5file:
-        plot_modes(h5file["petibm"], "petibm", _figdir, 20)
-        plot_modes(h5file["pinn"], "pinn", _figdir, 20)
+        plot_modes(h5file["petibm"], "petibm", _figdir, 5)
+        plot_modes(h5file["pinn"], "pinn", _figdir, 5)

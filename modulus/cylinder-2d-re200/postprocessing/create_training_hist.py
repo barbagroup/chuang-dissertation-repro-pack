@@ -35,31 +35,30 @@ def plot_training_history(workdir, figdir, ws=10):
     # fixed cycling kwargs
     styles = cycler("color", pyplot.cm.tab10.colors[:3]) + cycler("label", cases.values())
 
-    fig = pyplot.figure()
-    fig.suptitle("Training history, 2D Cylinder Flow, $Re=200$")
+    fig = pyplot.figure(figsize=(3.75, 3.1))
     gs = fig.add_gridspec(2, 1)
 
     # against steps
     kwargs = styles()
     ax = fig.add_subplot(gs[0, 0])
     ax.set_title("Aggregated loss v.s. iterations")
-    ax.semilogy(data[0].index, data[0].loss.rolling(window=ws).min(), **next(kwargs))
-    ax.semilogy(data[1].index, data[1].loss.rolling(window=ws).min(), **next(kwargs))
-    ax.semilogy(data[2].index, data[2].loss.rolling(window=ws).min(), **next(kwargs))
+    ax.semilogy(data[0].index, data[0].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
+    ax.semilogy(data[1].index, data[1].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
+    ax.semilogy(data[2].index, data[2].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Aggregated loss")
-    ax.legend(loc=0)
+    ax.legend(loc=0, ncol=2)
 
     # against runtime
     kwargs = styles()
     ax = fig.add_subplot(gs[1, 0])
     ax.set_title("Aggregated loss v.s. run time")
-    ax.semilogy(data[0]["time elapsed"], data[0].loss.rolling(window=ws).min(), **next(kwargs))
-    ax.semilogy(data[1]["time elapsed"], data[1].loss.rolling(window=ws).min(), **next(kwargs))
-    ax.semilogy(data[2]["time elapsed"], data[2].loss.rolling(window=ws).min(), **next(kwargs))
+    ax.semilogy(data[0]["time elapsed"], data[0].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
+    ax.semilogy(data[1]["time elapsed"], data[1].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
+    ax.semilogy(data[2]["time elapsed"], data[2].loss.rolling(window=ws).min(), lw=1, **next(kwargs))
     ax.set_xlabel("Run time (hours)")
     ax.set_ylabel("Aggregated loss")
-    ax.legend(loc=0)
+    ax.legend(loc=0, ncol=2)
 
     # save
     fig.savefig(workdir.joinpath("figures", "loss-hist.png"))

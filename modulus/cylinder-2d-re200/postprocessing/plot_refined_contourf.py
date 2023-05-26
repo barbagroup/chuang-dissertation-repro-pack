@@ -37,6 +37,9 @@ with h5py.File(datafile, "r") as dset:
     times = dset["times"][...]
     times = times[(times >= 140.) & (times <= 142.5)]
 
+    # manually pop up unwanted times
+    times = times[[0, 2, 4, 5]]
+
 coords = {}
 with h5py.File(datafile, "r") as dset:
     for field, orent in itertools.product(["u", "v", "p", "vorticity_z"], ["x", "y"]):
@@ -69,23 +72,21 @@ names = {
     "pinn": "Data-driven PINN", "petibm": "PetIBM"
 }
 
-fields = ["u", "v", "p", "vorticity_z", "qcriterion"]
+fields = ["vorticity_z", "qcriterion"]
 
-for field, t in itertools.product(fields, times):
-    print(f"Plotting {field} at time={t}")
+for field in fields:
+    print(f"Plotting {field}")
 
-    fig = pyplot.figure(figsize=(6.5, 3.25))
-    fig.suptitle(rf"{names[field]}, t={t}$s$")
+    fig = pyplot.figure(figsize=(3.75, 7.5), frameon=False)
+    gs = fig.add_gridspec(
+        len(times)+1, 2, height_ratios=[10]*len(times)+[0.5], wspace=0.01, hspace=0.01)
 
-    gs = fig.add_gridspec(1, 3, width_ratios=[10, 10, 0.5])
-
-    for i, solv in enumerate(["petibm", "pinn"]):
+    for (ti, t), (i, solv) in itertools.product(enumerate(times), enumerate(["petibm", "pinn"])):
 
         with h5py.File(datafile, "r") as dset:
             data = dset[f"{solv}/{field}/{t}"][...]
 
-        ax = fig.add_subplot(gs[0, i])
-        ax.set_title(names[solv])
+        ax = fig.add_subplot(gs[ti, i])
 
         if field == "qcriterion":
             cs = ax.contourf(
@@ -100,17 +101,24 @@ for field, t in itertools.product(fields, times):
 
         ax.set_xlim(-1, 3)
         ax.set_ylim(-2, 2)
-        ax.set_xlabel(r"$x$ ($m$)")
-
-        if i == 0:
-            ax.set_ylabel(r"$y$ ($m$)")
-        else:
-            ax.get_yaxis().set_ticks([])
-
         ax.set_aspect("equal", "box")
+
+        if ti != len(times) - 1:
+            ax.xaxis.set_visible(False)
+        else:
+            ax.set_xlabel(r"$x$")
+        
+        if i != 0:
+            ax.yaxis.set_visible(False)
+        else:
+            ax.set_ylabel(rf"t={t:.1f}"+"\n"+r"$y$")
+
         ax.add_artist(pyplot.Circle((0., 0.), 0.5, color="w", ec="k", lw=1, zorder=10))
 
-    cax = fig.add_subplot(gs[0, 2])
-    fig.colorbar(cs, cax=cax, label=names[field])
-    fig.savefig(figdir.joinpath(f"{field}_t{t}.png"))
+    cax = fig.add_subplot(gs[-1, :])
+    fig.colorbar(cs, cax=cax, label=names[field], orientation="horizontal")
+
+    fig.set_constrained_layout_pads(w_pad=0, h_pad=0, hspace=0, wspace=0)
+
+    fig.savefig(figdir.joinpath(f"{field}.png"), bbox_inches="tight")
     pyplot.close(fig)

@@ -67,10 +67,7 @@ def get_casedata(workdir, casename, mtype, rank=0):
 
     # extra configurations
     cfg.device = "cpu"
-    cfg.eval_times = list(set(
-        [float(val) for val in range(0, 201, 10)] +
-        [float(val) for val in range(135, 156, 1)]
-    ))
+    cfg.eval_times = [10., 50., 140., 144., 190.]
     cfg.nx = 400  # number of cells in x direction
     cfg.ny = 200  # number of cells in y direction
     cfg.nr = 720  # number of cells on cylinder surface
@@ -125,10 +122,6 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
 
     # torch version of gridlines; reshape to N by 1
     kwargs = {"dtype": dtype, "device": casedata.cfg.device, "requires_grad": True}
-    invars = {
-        "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
-        "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
-    }
 
     # snapshot data holder (for contour plotting)
     snapshots = {"x": npx, "y": npy}
@@ -136,6 +129,10 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
     if casedata.unsteady:
         for time in casedata.cfg.eval_times:
             print(f"[Rank {rank}] Predicting time = {time}")
+            invars = {
+                "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+                "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+            }
             invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
             preds = model(invars)
             snapshots[time] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
@@ -144,6 +141,10 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
             snapshots[time]["p"] -= snapshots[time]["p"].mean()
     else:
         print(f"[Rank {rank}] Predicting steady solution")
+        invars = {
+            "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+            "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+        }
         preds = model(invars)
         snapshots["steady"] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
 
