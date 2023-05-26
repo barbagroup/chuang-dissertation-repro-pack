@@ -103,6 +103,7 @@ CUDA_VISIBLE_DEVICES=<the id of the GPU> apptainer exec \
 
 * Figure 10 - 16:
   1. Execute `modulus/cylinder-2d-re200/postprocessing/gather_data.py` to post-process raw data
+     (The peak memory usage may be about 10GB.)
   2. Execute `modulus/cylinder-2d-re200/postprocessing/create_training_hist.py`
   3. Execute `modulus/cylinder-2d-re200/postprocessing/create_training_hist.py`
   4. Execute `modulus/cylinder-2d-re200/postprocessing/create_contours.py`

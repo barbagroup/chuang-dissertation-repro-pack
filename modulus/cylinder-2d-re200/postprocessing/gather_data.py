@@ -129,24 +129,53 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
     if casedata.unsteady:
         for time in casedata.cfg.eval_times:
             print(f"[Rank {rank}] Predicting time = {time}")
-            invars = {
-                "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
-                "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
-            }
-            invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
-            preds = model(invars)
-            snapshots[time] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
 
-            # correct for reference pressure
-            snapshots[time]["p"] -= snapshots[time]["p"].mean()
+            snapshots[time] = {k: [] for k in fields}
+
+            i = 0
+            for npxi, npyi in zip(numpy.array_split(npx.flatten(), 4), numpy.array_split(npy.flatten(), 4)):
+                print(f"[Rank {rank}]     batch {i}")
+                invars = {
+                    "x": torch.tensor(npxi.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+                    "y": torch.tensor(npyi.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+                }
+                invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
+
+                preds = model(invars)
+                del invars
+
+                for k, v in preds.items():
+                    snapshots[time][k].append(v.detach().cpu().numpy())
+
+                i += 1
+
+            for k, v in snapshots[time].items():
+                snapshots[time][k] = numpy.concatenate(v).reshape(shape)
+
+            snapshots[time]["p"] -= snapshots[time]["p"].mean()  # correct for reference pressure
     else:
         print(f"[Rank {rank}] Predicting steady solution")
-        invars = {
-            "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
-            "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
-        }
-        preds = model(invars)
-        snapshots["steady"] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
+
+        snapshots["steady"] = {k: [] for k in fields}
+
+        i = 0
+        for npxi, npyi in zip(numpy.array_split(npx.flatten(), 4), numpy.array_split(npy.flatten(), 4)):
+            print(f"[Rank {rank}]     batch {i}")
+            invars = {
+                "x": torch.tensor(npxi.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+                "y": torch.tensor(npyi.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+            }
+
+            preds = model(invars)
+            del invars
+
+            for k, v in preds.items():
+                snapshots["steady"][k].append(v.detach().cpu().numpy())
+
+            i += 1
+
+        for k, v in snapshots["steady"].items():
+            snapshots["steady"][k] = numpy.concatenate(v).reshape(shape)
 
         # correct for reference pressure
         snapshots["steady"]["p"] -= snapshots["steady"]["p"].mean()
@@ -427,7 +456,7 @@ if __name__ == "__main__":
     # spawning processes
     procs = []
     os.environ["OMP_NUM_THREADS"] = f"{multiprocessing.cpu_count()//2}"  # limit threads per process
-    for m in range(2):
+    for m in range(1):  # only use 1 core to avoid out-of-memory on personal laptop
         proc = ctx.Process(target=worker, args=(inps, m))
         proc.start()
         procs.append(proc)
