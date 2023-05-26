@@ -37,9 +37,6 @@ with h5py.File(datafile, "r") as dset:
     times = dset["times"][...]
     times = times[(times >= 140.) & (times <= 142.5)]
 
-    # manually pop up unwanted times
-    times = times[[0, 2, 4, 5]]
-
 coords = {}
 with h5py.File(datafile, "r") as dset:
     for field, orent in itertools.product(["u", "v", "p", "vorticity_z"], ["x", "y"]):
@@ -107,7 +104,7 @@ for field in fields:
             ax.xaxis.set_visible(False)
         else:
             ax.set_xlabel(r"$x$")
-        
+
         if i != 0:
             ax.yaxis.set_visible(False)
         else:

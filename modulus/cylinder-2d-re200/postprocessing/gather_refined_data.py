@@ -124,7 +124,7 @@ def get_pinn_model(casedir, step, fields):
     """
 
     # get configuration
-    cfg = OmegaConf.load(casedir.joinpath("outputs", "config.yaml"))
+    cfg = OmegaConf.load(casedir.joinpath("config.yaml"))
     cfg.custom.scaling = False  # no scaling for re200
 
     # get computational graph and network model
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     _fields = ["u", "v", "p", "vorticity_z", "qcriterion", "continuity", "momentum_x", "momentum_y"]
     _petibmfields = ["u", "v", "vorticity_z", "p"]
     _device = "cpu"
-    _times = list(float(val) for val in numpy.linspace(135, 145, 21))
+    _times = [135., 136., 137., 137.5, 140., 141., 142., 142.5]
     _xlim = [-1.0, 3.0]
     _ylim = [-2.0, 2.0]
     _nx = 125
