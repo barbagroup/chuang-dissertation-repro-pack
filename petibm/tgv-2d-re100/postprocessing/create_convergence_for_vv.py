@@ -6,7 +6,7 @@
 #
 # Distributed under terms of the BSD 3-Clause license.
 
-"""Create error vs walltime for PetIBM.
+"""Plot grid convergence results.
 """
 import re
 import pathlib
@@ -79,52 +79,69 @@ def get_data(workdir, casename):
 
     # infer the number of time steps
     nt = int(logfile.stem)
+    ss = {field: (x[field].size * nt)**(1./3.) for field in ["u", "v", "p"]}
 
     # return err, time, x.size * nt
-    return (err["u"], err["v"], err["p"]), \
-        ((x["u"].size * nt)**(1./3.), (x["v"].size * nt)**(1./3.), (x["p"].size * nt)**(1./3.))
+    return (err["u"], err["v"], err["p"]), (ss["u"], ss["v"], ss["p"])
 
 
 def create_plot(workdir, cases, figdir):
     """Plot.
     """
 
-    errs = {"u": [], "v": [], "p": []}
-    ncells = {"u": [], "v": [], "p": []}
-    for case in cases:
-        print(case)
-        err, ncell = get_data(workdir, case)
-        errs["u"].append(err[0])
-        errs["v"].append(err[1])
-        errs["p"].append(err[2])
-        ncells["u"].append(ncell[0])
-        ncells["v"].append(ncell[1])
-        ncells["p"].append(ncell[2])
+    workdir.joinpath("cache").mkdir(exist_ok=True)
+    try:
+        data = numpy.load(workdir.joinpath("cache", "vv_data.npz"), allow_pickle=True)
+        errs = data["arr_0"].item()
+        ncells = data["arr_1"].item()
+    except (KeyError, FileNotFoundError):
 
-    fig = pyplot.figure(figsize=(6.5, 3.5))
-    fig.suptitle(r"PetIBM, TGV 2D $Re=100$: grid convergence of spatial-temporal errors")
+        errs = {"u": [], "v": [], "p": []}
+        ncells = {"u": [], "v": [], "p": []}
+        for case in cases:
+            print(case)
+            err, ncell = get_data(workdir, case)
+            errs["u"].append(err[0])
+            errs["v"].append(err[1])
+            errs["p"].append(err[2])
+            ncells["u"].append(ncell[0])
+            ncells["v"].append(ncell[1])
+            ncells["p"].append(ncell[2])
+
+        # save to a cache file
+        numpy.savez(workdir.joinpath("cache", "vv_data.npz"), errs, ncells)
+
+    fig = pyplot.figure(figsize=(3.75, 2.25))
     gs = fig.add_gridspec(1, 3)
 
     for i, field in enumerate(["u", "v", "p"]):
         print(i, field)
         ax = fig.add_subplot(gs[i])
-        ax.set_title(rf"Field: ${field}$")
-        ax.set_xlabel(r"$\sqrt[3]{\mathrm{Total\ sp.-temp.\ pts}}$")
+
+        lines = [
+            ax.loglog(ncells[field], errs[field], marker=".", label="Simulation error")[0],
+            ax.loglog(
+                [ncells[field][0], ncells[field][-1]],
+                [errs[field][0]*0.6, errs[field][0]*0.6/(ncells[field][-1]/ncells[field][0])**2],
+                label="2nd-order ref.", ls="--"
+            )[0],
+        ]
+
+        ax.set_title(rf"${field}$")
+        ax.grid()
 
         if i == 0:
             ax.set_ylabel(r"Spatial-temporal $L_2$ error")
+        else:
+            ax.set_yticklabels([])
 
-        ax.grid()
-        ax.loglog(ncells[field], errs[field], marker=".", label="Simulation error")
-        ax.loglog(
-            [ncells[field][0], ncells[field][-1]],
-            [errs[field][0]*0.6, errs[field][0]*0.6/(ncells[field][-1]/ncells[field][0])**2],
-            label="2nd-order ref.", ls="--"
-        )
-        ax.legend(loc=0)
+        if i == 1:
+            ax.set_xlabel(r"$\sqrt[3]{{\mathrm{{Total\ spatial{}temporal\ points}}}}$".format("\u2010"))
+
+    fig.legend(handles=lines, loc="lower center", bbox_to_anchor=(0.6, 1), ncol=2)
 
     # save
-    fig.savefig(figdir.joinpath("petibm-tgv-2d-re100-convergence.png"))
+    fig.savefig(figdir.joinpath("petibm-tgv-2d-re100-convergence.png"), bbox_inches="tight")
 
 
 if __name__ == "__main__":
