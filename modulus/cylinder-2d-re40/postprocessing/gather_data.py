@@ -82,7 +82,7 @@ def get_casedata(workdir, casename, mtype, rank=0):
 
     # extra configurations
     cfg.device = "cpu"
-    cfg.eval_times = [float(val) for val in range(0, 21)]
+    cfg.eval_times = [20.0]
     cfg.nx = 400  # number of cells in x direction
     cfg.ny = 200  # number of cells in y direction
     cfg.nr = 720  # number of cells on cylinder surface
@@ -134,10 +134,6 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
 
     # torch version of gridlines; reshape to N by 1
     kwargs = {"dtype": dtype, "device": casedata.cfg.device, "requires_grad": True}
-    invars = {
-        "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
-        "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
-    }
 
     # snapshot data holder (for contour plotting)
     snapshots = {"x": npx, "y": npy}
@@ -145,11 +141,19 @@ def get_snapshots(casedata, graph, fields, rank=0):  # pylint: disable=too-many-
     if casedata.unsteady:
         for time in casedata.cfg.eval_times:
             print(f"[Rank {rank}] Predicting time = {time}")
+            invars = {
+                "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+                "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+            }
             invars["t"] = torch.full_like(invars["x"], time)  # pylint: disable=no-member
             preds = model(invars)
             snapshots[time] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
     else:
         print(f"[Rank {rank}] Predicting steady solution")
+        invars = {
+            "x": torch.tensor(npx.reshape(-1, 1), **kwargs),  # pylint: disable=no-member
+            "y": torch.tensor(npy.reshape(-1, 1), **kwargs)  # pylint: disable=no-member
+        }
         preds = model(invars)
         snapshots["steady"] = {k: v.detach().cpu().numpy().reshape(shape) for k, v in preds.items()}
 
@@ -434,22 +438,13 @@ if __name__ == "__main__":
     inps = ctx.JoinableQueue()
 
     # steady cases
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "raw", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-steady", "swa", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "raw", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-unsteady", "swa", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-steady", "raw", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-steady", "swa", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-unsteady", "raw", False, False, False))
-    inps.put((topdir, "nl6-nn512-npts6400-large-cycle-unsteady", "swa", False, False, False))
     inps.put((topdir, "nl6-nn512-npts25600-large-cycle-steady", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-steady", "swa", True, True, True))
     inps.put((topdir, "nl6-nn512-npts25600-large-cycle-unsteady", "raw", True, True, True))
-    inps.put((topdir, "nl6-nn512-npts25600-large-cycle-unsteady", "swa", True, True, True))
 
     # spawning processes
     procs = []
-    for m in range(ctx.cpu_count()//4):
+    # for m in range(ctx.cpu_count()//4):
+    for m in range(1):  # only use 1 thread to avoid out-of-memory on personal laptop
         proc = ctx.Process(target=worker, args=(inps, m))
         proc.start()
         procs.append(proc)

@@ -17,21 +17,17 @@ pyplot.style.use(pathlib.Path(__file__).resolve().parents[3].joinpath("resources
 
 
 template = \
-"""\\begin{{table}}[H]
-    \\singlespacing
+"""\\begin{{table}}
+    \\centering%
     \\begin{{threeparttable}}[b]
         \\begin{{tabular}}{{lccc}}
             \\toprule
             & $C_D$ & $C_{{D_p}}$ & $C_{{D_f}}$ \\\\
             \\midrule
-            $(6, 512, 6400)$, steady & {:.2f} & {:.2f} & {:.2f} \\\\
-            $(6, 512, 6400)$, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
-            $(6, 512, 6400)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\\\
-            $(6, 512, 6400)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
-            $(6, 512, 25600)$, large cycle, steady & {:.2f} & {:.2f} & {:.2f} \\\\
-            $(6, 512, 25600)$, large cycle, unsteady & {:.2f} & {:.2f} & {:.2f} \\\\
+            Steady PINN & {:.2f} & {:.2f} & {:.2f} \\\\
+            Unsteady PINN & {:.2f} & {:.2f} & {:.2f} \\\\
             PetIBM & 1.63 & 1.02 & 0.61 \\\\
-            Rosetti et al., 2012\\cite{{rosetti_urans_2012}}\\tnote{{1}} & 1.74\\pm 0.09 & n/a & n/a \\\\
+            Rosetti et al., 2012\\cite{{rosetti_urans_2012}}\\tnote{{1}} & \\num{{1.74+-0.09}} & n/a & n/a \\\\
             Rosetti et al., 2012\\cite{{rosetti_urans_2012}}\\tnote{{2}} & 1.61 & n/a & n/a \\\\
             Sen et al., 2009\\cite{{sen_steady_2009}}\\tnote{{2}} & 1.51 & n/a & n/a \\\\
             Park et al., 1988\\cite{{park_numerical_1998}}\\tnote{{2}} & 1.51 & 0.99 & 0.53 \\\\
@@ -44,14 +40,14 @@ template = \
             \\item [1] Experimental result
             \\item [2] Simulation result
         \\end{{tablenotes}}
-        \\caption[Validation of drag coefficients]{{%
-            Validation of drag coefficients.%
+        \\caption{{%
+            Validation of drag coefficients. %
             $C_D$, $C_{{D_p}}$, and $C_{{D_f}}$ denote the coefficients of total drag, pressure drag, %
             and friction drag, respectively.%
         }}%
-        \\label{{table:cylinder-2d-re40-comparison-cd}}
+        \\label{{table:cylinder-re40-cd-comparison}}
     \\end{{threeparttable}}
-\\end{{table}}%\n"""
+\\end{{table}}%"""
 
 
 def create_table(workdir, tabledir):
@@ -59,10 +55,6 @@ def create_table(workdir, tabledir):
     """
 
     cases = [
-        "nl6-nn512-npts6400-steady",
-        "nl6-nn512-npts6400-unsteady",
-        "nl6-nn512-npts6400-large-cycle-steady",
-        "nl6-nn512-npts6400-large-cycle-unsteady",
         "nl6-nn512-npts25600-large-cycle-steady",
         "nl6-nn512-npts25600-large-cycle-unsteady",
     ]

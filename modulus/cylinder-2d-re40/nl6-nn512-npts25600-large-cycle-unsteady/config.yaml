@@ -84,3 +84,4 @@ custom:
   rho: 1.0
   uic: 1.0
   activation: silu
+  scaling: True

@@ -25,9 +25,8 @@ def plot_force_hist(workdir, petibmdir, figdir):
     styles = (cycler("color", ["k"]+list(pyplot.cm.tab10.colors)[:3]) + cycler("ls", ["-", "--", ":", "-."]))()
 
     cases = {
-        "nl6-nn512-npts6400-unsteady": r"$(6, 512, 6400)$",
-        "nl6-nn512-npts6400-large-cycle-unsteady": r"$(6, 512, 6400)$, large cycle",
-        "nl6-nn512-npts25600-large-cycle-unsteady": r"$(6, 512, 25600)$, large cycle",
+        "nl6-nn512-npts25600-large-cycle-steady": "Steady PINN solver",
+        "nl6-nn512-npts25600-large-cycle-unsteady": "Unsteady PINN solver",
     }
 
     # line and label holders
@@ -37,8 +36,7 @@ def plot_force_hist(workdir, petibmdir, figdir):
     # add PetIBM results
     petibm = numpy.loadtxt(petibmdir.joinpath("output", "forces-0.txt"), dtype=float)
 
-    fig = pyplot.figure(figsize=(6.5, 3.5))
-    fig.suptitle(r"Lift and drag coefficients, 2D cylinder flow, unsteady, $Re=40$")
+    fig = pyplot.figure(figsize=(3.75, 2))
     gs = fig.add_gridspec(1, 1)
     ax = fig.add_subplot(gs[0, 0])
 
@@ -64,8 +62,8 @@ def plot_force_hist(workdir, petibmdir, figdir):
 
         style = next(styles)  # the two line will use the same style
         lines.append((
-            ax.plot(times, cd, lw=1.5, alpha=0.95, **style)[0],
-            ax.plot(times, cl, lw=1.5, alpha=0.95, **style)[0]
+            ax.plot(times, cd, lw=1.25, alpha=0.95, **style)[0],
+            ax.plot(times, cl, lw=1.25, alpha=0.95, **style)[0]
         ))
         labels.append(label)
 
@@ -73,7 +71,6 @@ def plot_force_hist(workdir, petibmdir, figdir):
     ax.set_xlabel(r"$t$")
     ax.set_ylim(-0.5, 2.5)
     ax.set_ylabel("$C_D$ and $C_L$")
-    ax.grid()
     ax.legend(lines, labels, handler_map={tuple: HandlerTuple(ndivide=None)}, ncol=2, loc=0)
 
     # save

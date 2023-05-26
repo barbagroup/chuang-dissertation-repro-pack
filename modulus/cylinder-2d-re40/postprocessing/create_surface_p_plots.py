@@ -74,48 +74,46 @@ def read_validation_data(petibmdir):
     return {"sen2009": sen2009, "park1998": park1998, "grove1964": grove1964, "petibm": petibm}
 
 
-def plot_steady_surface_pressure(workdir, figdir, refs):
+def plot_surface_pressure(workdir, figdir, refs):
     """Plot surface pressure coefficients.
     """
 
     cases = {
-        "nl6-nn512-npts6400-steady": r"$(6, 512, 6400)$",
-        "nl6-nn512-npts6400-large-cycle-steady": r"$(6, 512, 6400)$, large cycle",
-        "nl6-nn512-npts25600-large-cycle-steady": r"$(6, 512, 25600)$, large cycle",
+        "nl6-nn512-npts25600-large-cycle-steady": "Steady PINN solver",
+        "nl6-nn512-npts25600-large-cycle-unsteady": "Unsteady PINN solver",
     }
 
-    fig = pyplot.figure()
-    fig.suptitle(r"Pressure coefficients on cylinder surface, $Re=40$, steady")
+    fig = pyplot.figure(figsize=(3.75, 2.4))
     gs = fig.add_gridspec(1, 1)
     ax = fig.add_subplot(gs[0, 0])
 
     # reference: petibm
     ax.plot(
         refs["petibm"]["degrees"], refs["petibm"]["values"],
-        c="k", ls="-", lw=2, zorder=1,
+        c="k", ls="-", lw=1, zorder=1,
         label="PetIBM"
     )
 
     # other references
     ax.plot(
         refs["grove1964"]["degrees"], refs["grove1964"]["values"],
-        ls="none", marker="s", ms=6, alpha=0.6, zorder=2,
+        ls="none", marker="s", ms=4, alpha=0.8, zorder=2,
         label="Grove et al., 1964",
     )
 
     ax.plot(
         refs["sen2009"]["degrees"], refs["sen2009"]["values"],
-        ls="none", marker="o", mfc="none", ms=5, alpha=0.6, zorder=2,
+        ls="none", marker="o", mfc="none", ms=4, alpha=0.8, zorder=2,
         label="Sen et al., 2009"
     )
 
     ax.plot(
         refs["park1998"]["degrees"], refs["park1998"]["values"],
-        ls="none", marker="^", mfc="none", ms=5, alpha=0.6, zorder=2,
+        ls="none", marker="^", mfc="none", ms=4, alpha=0.8, zorder=2,
         label="Park et al., 1998"
     )
 
-    kwargs = {"lw": 1.5, "zorder": 1.0}
+    kwargs = {"lw": 1, "zorder": 3}
     lss = ["-.", "--", ":"]
     for i, (case, label) in enumerate(cases.items()):
         with h5open(workdir.joinpath("outputs", f"{case}-raw.h5"), "r") as h5file:
@@ -130,74 +128,10 @@ def plot_steady_surface_pressure(workdir, figdir, refs):
     ax.set_ylabel(r"Pressure coefficient, $C_p$")
     ax.set_ylim(-1.2, 1.5)
 
-    ax.grid()
     ax.legend(loc=0)
 
     # save
-    fig.savefig(figdir.joinpath("surface-pressure-steady.png"))
-
-
-def plot_unsteady_surface_pressure(workdir, figdir, refs):
-    """Plot surface pressure coefficients.
-    """
-
-    cases = {
-        "nl6-nn512-npts6400-unsteady": r"$(6, 512, 6400)$",
-        "nl6-nn512-npts6400-large-cycle-unsteady": r"$(6, 512, 6400)$, large cycle",
-        "nl6-nn512-npts25600-large-cycle-unsteady": r"$(6, 512, 25600)$, large cycle",
-    }
-
-    fig = pyplot.figure()
-    fig.suptitle(r"Pressure coefficients on cylinder surface, $Re=40$, unsteady")
-    gs = fig.add_gridspec(1, 1)
-    ax = fig.add_subplot(gs[0, 0])
-
-    # reference: petibm
-    ax.plot(
-        refs["petibm"]["degrees"], refs["petibm"]["values"],
-        c="k", ls="-", lw=2, zorder=1,
-        label="PetIBM"
-    )
-
-    # other references
-    ax.plot(
-        refs["grove1964"]["degrees"], refs["grove1964"]["values"],
-        ls="none", marker="s", ms=6, alpha=0.6, zorder=2,
-        label="Grove et al., 1964",
-    )
-
-    ax.plot(
-        refs["sen2009"]["degrees"], refs["sen2009"]["values"],
-        ls="none", marker="o", mfc="none", ms=5, alpha=0.6, zorder=2,
-        label="Sen et al., 2009"
-    )
-
-    ax.plot(
-        refs["park1998"]["degrees"], refs["park1998"]["values"],
-        ls="none", marker="^", mfc="none", ms=5, alpha=0.6, zorder=2,
-        label="Park et al., 1998"
-    )
-
-    kwargs = {"lw": 1.5, "zorder": 1}
-    lss = ["-.", "--", ":"]
-    for i, (case, label) in enumerate(cases.items()):
-        with h5open(workdir.joinpath("outputs", f"{case}-raw.h5"), "r") as h5file:
-            thetas = h5file["surfp/degrees"][...]
-            values = h5file["surfp/cp"][...]
-
-        ax.plot(thetas, values, label=label, ls=lss[i], **kwargs)
-
-    ax.set_xlabel(r"Degree from $+x$ axis")
-    ax.set_xlim(0, 180.)
-
-    ax.set_ylabel(r"Pressure coefficient, $C_p$")
-    ax.set_ylim(-1.2, 1.5)
-
-    ax.grid()
-    ax.legend(loc=0)
-
-    # save
-    fig.savefig(figdir.joinpath("surface-pressure-unsteady.png"))
+    fig.savefig(figdir.joinpath("surface-pressure.png"))
 
 
 if __name__ == "__main__":
@@ -209,5 +143,4 @@ if __name__ == "__main__":
     _figdir.mkdir(parents=True, exist_ok=True)
 
     _refs = read_validation_data(_petibmdir)
-    plot_steady_surface_pressure(_workdir, _figdir, _refs)
-    plot_unsteady_surface_pressure(_workdir, _figdir, _refs)
+    plot_surface_pressure(_workdir, _figdir, _refs)

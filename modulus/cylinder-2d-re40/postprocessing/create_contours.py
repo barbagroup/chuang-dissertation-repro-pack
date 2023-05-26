@@ -6,7 +6,7 @@
 #
 # Distributed under terms of the BSD 3-Clause license.
 
-"""Postprocessing.
+"""Create contours.
 """
 import pathlib
 import numpy
@@ -107,8 +107,7 @@ def three_cols_plot(workdir, petibmdir, figdir):
             data.append(read_pinn_snapshot(workdir, case, 20.0))
 
     # figure
-    fig, axs = pyplot.subplots(4, 3, sharex=True, sharey=True, figsize=(6.5, 9))
-    fig.suptitle(r"Flow field comparison, 2D cylinder flow, $Re=40$")
+    fig, axs = pyplot.subplots(4, 3, sharex=True, sharey=True, figsize=(6, 8))
 
     for col, ((case, label), (coords, vals)) in enumerate(zip(cases.items(), data)):
         for row, (field, val) in enumerate(vals.items()):
@@ -136,12 +135,19 @@ def three_cols_plot(workdir, petibmdir, figdir):
 
     for row in range(4):
         axs[row, 0].set_ylabel("y")
+        axs[row, 1].yaxis.set_visible(False)
+        axs[row, 2].yaxis.set_visible(False)
 
     for col in range(3):
+        axs[0, col].xaxis.set_visible(False)
+        axs[1, col].xaxis.set_visible(False)
+        axs[2, col].xaxis.set_visible(False)
         axs[3, col].set_xlabel("x")
 
+    fig.set_constrained_layout_pads(w_pad=0, h_pad=0.03, hspace=0, wspace=0)
+
     # save
-    fig.savefig(figdir.joinpath("contour-comparison.png"))
+    fig.savefig(figdir.joinpath("contour-comparison.png"), bbox_inches="tight")
 
 
 if __name__ == "__main__":
