@@ -177,7 +177,7 @@ def create_graph(cfg, dim=2, unsteady=True, params=None):
         scales = dict({key: (0., 1.) for key in inkeys})
     else:
         scales = dict({key: process_domain(cfg.custom[key]) for key in inkeys})
-        scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
+        # scales = {key: (val[0], val[1]-val[0]) for key, val in scales.items()}
 
     # set up periodicity
     try:
