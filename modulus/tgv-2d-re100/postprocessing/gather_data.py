@@ -65,7 +65,7 @@ def get_casedata(casedir, mtype, rank=0):
     datadir = casedir.joinpath("outputs")
 
     # case configuration
-    cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
+    cfg = OmegaConf.load(datadir.parent.joinpath("config.yaml"))
 
     # get a dict to convert from iteration to elapsed wall time
     cfg.elapsedtimes = log_parser(casedir)["time elapsed"].to_dict()

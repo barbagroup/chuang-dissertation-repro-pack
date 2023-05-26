@@ -55,7 +55,7 @@ def get_casedata(workdir, casename, mtype, rank=0):
     beststep = logs.loc[steps, "loss"].idxmin()
 
     # case configuration
-    cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
+    cfg = OmegaConf.load(datadir.parent.joinpath("config.yaml"))
 
     # will get the computational graph from the latest checkpoint
     if mtype == "raw":

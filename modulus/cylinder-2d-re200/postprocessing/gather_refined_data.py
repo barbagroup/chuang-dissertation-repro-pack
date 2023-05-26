@@ -124,7 +124,7 @@ def get_pinn_model(casedir, step, fields):
     """
 
     # get configuration
-    cfg = OmegaConf.load(casedir.joinpath("outputs", ".hydra", "config.yaml"))
+    cfg = OmegaConf.load(casedir.joinpath("outputs", "config.yaml"))
     cfg.custom.scaling = False  # no scaling for re200
 
     # get computational graph and network model

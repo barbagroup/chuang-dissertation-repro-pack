@@ -51,7 +51,7 @@ def get_casedata(workdir, casename, mtype, rank=0):
         datadir = workdir.joinpath(casename, "outputs", "main")
 
         # case configuration
-        cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
+        cfg = OmegaConf.load(datadir.parent.joinpath("config.yaml"))
         cfg.custom = {}
         cfg.custom.x = [-10., 30.]
         cfg.custom.y = [-10., 10.]
@@ -70,7 +70,7 @@ def get_casedata(workdir, casename, mtype, rank=0):
         datadir = workdir.joinpath(casename, "outputs")
 
         # case configuration
-        cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
+        cfg = OmegaConf.load(datadir.parent.joinpath("config.yaml"))
 
         # will get the computational graph from the latest checkpoint
         if mtype == "raw":

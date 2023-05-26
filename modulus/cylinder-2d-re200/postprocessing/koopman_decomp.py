@@ -48,7 +48,7 @@ def get_pinn_graph(datadir):
     beststep = logs.loc[steps, "loss"].idxmin()
 
     # case configuration
-    cfg = OmegaConf.load(datadir.joinpath(".hydra", "config.yaml"))
+    cfg = OmegaConf.load(datadir.parent.joinpath("config.yaml"))
     cfg.device = "cpu"
     cfg.custom.scaling = False
 
