@@ -97,30 +97,31 @@ def plot_surface_pressure(workdir, figdir, refs):
     # other references
     ax.plot(
         refs["grove1964"]["degrees"], refs["grove1964"]["values"],
-        ls="none", marker="s", ms=4, alpha=0.8, zorder=2,
+        ls="none", marker="s", ms=4, alpha=0.8, zorder=2, c="tab:purple",
         label="Grove et al., 1964",
     )
 
     ax.plot(
         refs["sen2009"]["degrees"], refs["sen2009"]["values"],
         ls="none", marker="o", mfc="none", ms=4, alpha=0.8, zorder=2,
-        label="Sen et al., 2009"
+        label="Sen et al., 2009", c="tab:green"
     )
 
     ax.plot(
         refs["park1998"]["degrees"], refs["park1998"]["values"],
         ls="none", marker="^", mfc="none", ms=4, alpha=0.8, zorder=2,
-        label="Park et al., 1998"
+        label="Park et al., 1998", c="tab:orange"
     )
 
     kwargs = {"lw": 1, "zorder": 3}
     lss = ["-.", "--", ":"]
+    colors = ["tab:blue", "tab:red"]
     for i, (case, label) in enumerate(cases.items()):
         with h5open(workdir.joinpath("outputs", f"{case}-raw.h5"), "r") as h5file:
             thetas = h5file["surfp/degrees"][...]
             values = h5file["surfp/cp"][...]
 
-        ax.plot(thetas, values, label=label, ls=lss[i], **kwargs)
+        ax.plot(thetas, values, label=label, ls=lss[i], c=colors[i], **kwargs)
 
     ax.set_xlabel(r"Degree from $+x$ axis")
     ax.set_xlim(0, 180.)

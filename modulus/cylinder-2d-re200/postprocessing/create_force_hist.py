@@ -23,7 +23,7 @@ def plot_force_hist(workdir, petibmdir, figdir):
     """Plot a field of all cases at a single time.
     """
     styles = (
-        cycler("color", ["k", "tab:blue", "tab:green", "tab:red"]) +
+        cycler("color", ["k", "tab:blue", "tab:red", "tab:orange"]) +
         cycler("ls", ["-", ":", "-.", "--"])
     )()
 
@@ -68,15 +68,15 @@ def plot_force_hist(workdir, petibmdir, figdir):
 
         if case == "nl6-nn512-npts6400-unsteady-petibm":
             lines.append((
-                ax.plot(times[times >= 125], cd[times >= 125], lw=1, alpha=0.95, **style)[0],
-                ax.plot(times[times >= 125], cl[times >= 125], lw=1, alpha=0.95, **style)[0]
+                ax.plot(times[times >= 125], cd[times >= 125], lw=1.5, alpha=0.95, **style)[0],
+                ax.plot(times[times >= 125], cl[times >= 125], lw=1.5, alpha=0.95, **style)[0]
 
             ))
             labels.append(label)
         else:
             lines.append((
-                ax.plot(times, cd, lw=1, alpha=0.95, **style)[0],
-                ax.plot(times, cl, lw=1, alpha=0.95, **style)[0]
+                ax.plot(times, cd, lw=1.5, alpha=0.95, **style)[0],
+                ax.plot(times, cl, lw=1.5, alpha=0.95, **style)[0]
             ))
             labels.append(label)
 

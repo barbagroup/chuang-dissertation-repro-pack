@@ -22,7 +22,7 @@ pyplot.style.use(pathlib.Path(__file__).resolve().parents[3].joinpath("resources
 def plot_force_hist(workdir, petibmdir, figdir):
     """Plot a field of all cases at a single time.
     """
-    styles = (cycler("color", ["k"]+list(pyplot.cm.tab10.colors)[:3]) + cycler("ls", ["-", "--", ":", "-."]))()
+    styles = (cycler("color", ["k"]+["tab:blue", "tab:red", "tab:gree"]) + cycler("ls", ["-", "-.", "--", ":"]))()
 
     cases = {
         "nl6-nn512-npts25600-large-cycle-steady": "Steady PINN solver",

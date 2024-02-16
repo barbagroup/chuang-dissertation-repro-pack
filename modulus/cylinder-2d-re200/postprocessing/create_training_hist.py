@@ -33,7 +33,7 @@ def plot_training_history(workdir, figdir, ws=10):
     data = [log_parser(workdir.joinpath(case)) for case in cases.keys()]
 
     # fixed cycling kwargs
-    styles = cycler("color", pyplot.cm.tab10.colors[:3]) + cycler("label", cases.values())
+    styles = cycler("color", ["tab:blue", "tab:red", "tab:orange"]) + cycler("label", cases.values())
 
     fig = pyplot.figure(figsize=(3.75, 3.1))
     gs = fig.add_gridspec(2, 1)

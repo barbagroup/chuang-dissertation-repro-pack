@@ -71,6 +71,8 @@ names = {
 
 fields = ["vorticity_z", "qcriterion"]
 
+solvernames = ["PetIBM", "Data-Driven PINN"]
+
 for field in fields:
     print(f"Plotting {field}")
 
@@ -111,6 +113,9 @@ for field in fields:
             ax.set_ylabel(rf"t={t:.1f}"+"\n"+r"$y$")
 
         ax.add_artist(pyplot.Circle((0., 0.), 0.5, color="w", ec="k", lw=1, zorder=10))
+
+        if ti == 0:
+            ax.set_title(solvernames[i])
 
     cax = fig.add_subplot(gs[-1, :])
     fig.colorbar(cs, cax=cax, label=names[field], orientation="horizontal")
